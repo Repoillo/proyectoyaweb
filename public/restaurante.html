@@ -8,43 +8,54 @@
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
 </head>
-<body class="dashboard-page">
+<body class="paginaRestaurante">
 
-    <div class="dashboard-container">
-        <aside class="sidebar">
+    <div class="contenedorRestaurante">
+        <aside class="panelLateral">
             <h2 class="logo">Mi Restaurante</h2>
             <nav class="menu">
                 <ul>
-                    <li><a href="#" class="active"><ion-icon name="fast-food-outline"></ion-icon> Platillos</a></li>
-                    <li><a href="#"><ion-icon name="cafe-outline"></ion-icon> Bebidas</a></li>
-                    <li><a href="#"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
-                    <li><a href="#"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
-                    <li><a href="#"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
+                    <li><a href="#" data-target="panelPlatillos"><ion-icon name="fast-food-outline"></ion-icon> Platillos</a></li>
+                    <li><a href="#" data-target="panelBebidas"><ion-icon name="cafe-outline"></ion-icon> Bebidas</a></li>
+                    <li><a href="#" data-target="panelIngredientes"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
+                    <li><a href="#" data-target="panelPostres"><ion-icon name="ice-cream-outline"></ion-icon> Postres</a></li>
+                    <li><a href="#" data-target="panelEmpleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
+                    <li><a href="#" data-target="panelFinanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
                 </ul>
             </nav>
-            <button class="button logout-button">Cerrar sesión</button>
+            <button class="boton botonSalir">Cerrar sesión</button>
         </aside>
 
-        <main class="content">
-            <h1>Bienvenido al panel</h1>
-            <p>Selecciona una opción del menú para comenzar.</p>
-            
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>Ventas Hoy</h3>
-                    <div class="number">$2,540</div>
-                    <div class="label">+12% vs ayer</div>
+        <main class="contenidoPrincipal">
+            <div id="panelBienvenida" class="panelBienvenida">
+                <ion-icon name="restaurant-outline"></ion-icon>
+                <h2>Elige una opción</h2>
+                <p>Selecciona una categoría del panel para comenzar.</p>
+            </div>
+
+            <div id="panelPlatillos" class="panelContenido oculto">
+                <div class="cabeceraContenido">
+                    <h1>Gestión de Platillos</h1>
+                    <button class="boton botonAgregar">Agregar Platillo</button>
                 </div>
-                <div class="stat-card">
-                    <h3>Órdenes</h3>
-                    <div class="number">64</div>
-                    <div class="label">+8% vs ayer</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Clientes</h3>
-                    <div class="number">42</div>
-                    <div class="label">+15% vs ayer</div>
-                </div>
+                <table class="tablaDatos">
+                    </table>
+            </div>
+
+            <div id="panelBebidas" class="panelContenido oculto">
+                <h1>Gestión de Bebidas</h1>
+            </div>
+            <div id="panelIngredientes" class="panelContenido oculto">
+                <h1>Gestión de Ingredientes</h1>
+            </div>
+            <div id="panelPostres" class="panelContenido oculto">
+                <h1>Gestión de Postres</h1>
+            </div>
+            <div id="panelEmpleados" class="panelContenido oculto">
+                <h1>Gestión de Empleados</h1>
+            </div>
+            <div id="panelFinanzas" class="panelContenido oculto">
+                <h1>Finanzas</h1>
             </div>
         </main>
     </div>
