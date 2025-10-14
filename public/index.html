@@ -5,15 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bienvenido - YA</title>
     <link rel="stylesheet" href="style.css">
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
 </head>
 <body>
     <div class="container" id="container">
         <div class="formcontainer signup">
             <form id="formcuenta">
                 <h1>Crear una Cuenta</h1>
-                <input type="text" id="registername" placeholder="Nombre" required>
-                <input type="email" id="registeremail" placeholder="Email" required>
-                <input type="password" id="registerpassword" placeholder="Contraseña" required>
+                <div class="input-wrapper">
+                    <ion-icon name="person-outline"></ion-icon>
+                    <input type="text" id="registername" placeholder="Nombre" required>
+                </div>
+                <div class="input-wrapper">
+                    <ion-icon name="mail-outline"></ion-icon>
+                    <input type="email" id="registeremail" placeholder="Email" required>
+                </div>
+                <div class="input-wrapper">
+                    <ion-icon name="lock-closed-outline"></ion-icon>
+                    <input type="password" id="registerpassword" placeholder="Contraseña" required>
+                </div>
                 <button type="submit">Registrarse</button>
                 <div id="registererror" class="errormessage"></div>
             </form>
@@ -22,8 +33,14 @@
         <div class="formcontainer signin">
             <form id="formsesion">
                 <h1>Iniciar Sesión</h1>
-                <input type="email" id="loginemail" placeholder="Email" required>
-                <input type="password" id="loginpassword" placeholder="Contraseña" required>
+                <div class="input-wrapper">
+                    <ion-icon name="mail-outline"></ion-icon>
+                    <input type="email" id="loginemail" placeholder="Email" required>
+                </div>
+                <div class="input-wrapper">
+                    <ion-icon name="lock-closed-outline"></ion-icon>
+                    <input type="password" id="loginpassword" placeholder="Contraseña" required>
+                </div>
                 <a href="#">¿Olvidaste tu contraseña?</a>
                 <button type="submit">Iniciar Sesión</button>
                 <div id="loginerror" class="errormessage"></div>
