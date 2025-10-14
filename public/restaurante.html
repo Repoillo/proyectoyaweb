@@ -11,53 +11,144 @@
 <body class="paginaRestaurante">
 
     <div class="contenedorRestaurante">
+        
         <aside class="panelLateral">
             <h2 class="logo">Mi Restaurante</h2>
             <nav class="menu">
                 <ul>
-                    <li><a href="#" data-target="panelPlatillos"><ion-icon name="fast-food-outline"></ion-icon> Platillos</a></li>
-                    <li><a href="#" data-target="panelBebidas"><ion-icon name="cafe-outline"></ion-icon> Bebidas</a></li>
-                    <li><a href="#" data-target="panelIngredientes"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
-                    <li><a href="#" data-target="panelPostres"><ion-icon name="ice-cream-outline"></ion-icon> Postres</a></li>
-                    <li><a href="#" data-target="panelEmpleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
-                    <li><a href="#" data-target="panelFinanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
+                    <li><a href="#" data-target="panelPlatillos" data-seccion="platillos"><ion-icon name="fast-food-outline"></ion-icon> Platillos</a></li>
+                    <li><a href="#" data-target="panelBebidas" data-seccion="bebidas"><ion-icon name="cafe-outline"></ion-icon> Bebidas</a></li>
+                    <li><a href="#" data-target="panelIngredientes" data-seccion="ingredientes"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
+                    <li><a href="#" data-target="panelPostres" data-seccion="postres"><ion-icon name="ice-cream-outline"></ion-icon> Postres</a></li>
+                    <li><a href="#" data-target="panelEmpleados" data-seccion="empleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
+                    <li><a href="#" data-target="panelFinanzas" data-seccion="finanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
                 </ul>
             </nav>
             <button class="boton botonSalir">Cerrar sesión</button>
         </aside>
 
         <main class="contenidoPrincipal">
+
             <div id="panelBienvenida" class="panelBienvenida">
                 <ion-icon name="restaurant-outline"></ion-icon>
                 <h2>Elige una opción</h2>
                 <p>Selecciona una categoría del panel para comenzar.</p>
             </div>
 
-            <div id="panelPlatillos" class="panelContenido oculto">
-                <div class="cabeceraContenido">
-                    <h1>Gestión de Platillos</h1>
-                    <button class="boton botonAgregar">Agregar Platillo</button>
+            <div id="panelPlatillos" class="panelContenido oculto" data-seccion="platillos">
+                <h1 class="seccion">Gestión de Platillos</h1>
+                <div class="contenedorAcciones">
+                    <button class="boton botonAgregar">Agregar</button>
+                    <button class="boton botonEditar" disabled>Editar</button>
+                    <button class="boton botonEliminar" disabled>Eliminar</button>
                 </div>
                 <table class="tablaDatos">
-                    </table>
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Descripción</th>
+                            <th>Precio</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
 
-            <div id="panelBebidas" class="panelContenido oculto">
-                <h1>Gestión de Bebidas</h1>
+            <div id="panelBebidas" class="panelContenido oculto" data-seccion="bebidas">
+                <h1 class="seccion">Gestión de Bebidas</h1>
+                <div class="contenedorAcciones">
+                    <button class="boton botonAgregar">Agregar</button>
+                    <button class="boton botonEditar" disabled>Editar</button>
+                    <button class="boton botonEliminar" disabled>Eliminar</button>
+                </div>
+                <table class="tablaDatos">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Precio</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
-            <div id="panelIngredientes" class="panelContenido oculto">
-                <h1>Gestión de Ingredientes</h1>
+
+            <div id="panelIngredientes" class="panelContenido oculto" data-seccion="ingredientes">
+                <h1 class="seccion">Gestión de Ingredientes</h1>
+                <div class="contenedorAcciones">
+                    <button class="boton botonAgregar">Agregar</button>
+                    <button class="boton botonEditar" disabled>Editar</button>
+                    <button class="boton botonEliminar" disabled>Eliminar</button>
+                </div>
+                <table class="tablaDatos">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Unidad</th>
+                            <th>Costo</th>
+                            <th>Cantidad</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
-            <div id="panelPostres" class="panelContenido oculto">
-                <h1>Gestión de Postres</h1>
+
+            <div id="panelPostres" class="panelContenido oculto" data-seccion="postres">
+                <h1 class="seccion">Gestión de Postres</h1>
+                <div class="contenedorAcciones">
+                    <button class="boton botonAgregar">Agregar</button>
+                    <button class="boton botonEditar" disabled>Editar</button>
+                    <button class="boton botonEliminar" disabled>Eliminar</button>
+                </div>
+                <table class="tablaDatos">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Descripción</th>
+                            <th>Precio</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
-            <div id="panelEmpleados" class="panelContenido oculto">
-                <h1>Gestión de Empleados</h1>
+
+            <div id="panelEmpleados" class="panelContenido oculto" data-seccion="empleados">
+                <h1 class="seccion">Gestión de Empleados</h1>
+                <div class="contenedorAcciones">
+                    <button class="boton botonAgregar">Agregar</button>
+                    <button class="boton botonEditar" disabled>Editar</button>
+                    <button class="boton botonEliminar" disabled>Eliminar</button>
+                </div>
+                <table class="tablaDatos">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Rol</th>
+                            <th>Sueldo</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
-            <div id="panelFinanzas" class="panelContenido oculto">
-                <h1>Finanzas</h1>
-            </div>
+            
+            <div id="panelFinanzas" class="panelContenido oculto" data-seccion="finanzas">
+                <h1 class="seccion">Finanzas</h1>
+                </div>
+
         </main>
+    </div>
+
+    <div id="modal" class="modal oculto">
+        <div class="contenidoModal">
+            <h2 id="tituloModal"></h2>
+            <form id="formulario">
+                <div id="camposDinamicos"></div>
+                
+                <div class="accionesFormulario">
+                    <button type="submit" class="boton botonGuardar">Guardar</button>
+                    <button type="button" class="boton botonCancelar">Cancelar</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script src="restaurante.js"></script>

@@ -358,3 +358,141 @@ input {
 .oculto {
     display: none;
 }
+/* ===== ESTILOS DEL MODAL ===== */
+.modal {
+    position: fixed; /* Se queda fijo en la pantalla */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5); /* Fondo semitransparente */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000; /* Para que esté por encima de todo */
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.modal.oculto {
+    opacity: 0;
+    pointer-events: none; /* Evita clics cuando está oculto */
+}
+
+.contenidoModal {
+    background-color: white;
+    padding: 30px 40px;
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 500px;
+    transform: translateY(0);
+    transition: transform 0.3s ease;
+}
+
+.modal.oculto .contenidoModal {
+    transform: translateY(-20px); /* Pequeño efecto al aparecer/desaparecer */
+}
+
+.contenidoModal h2 {
+    margin-top: 0;
+    margin-bottom: 25px;
+    text-align: center;
+    color: var(--darkgraytext);
+}
+
+.contenidoModal form label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #555;
+}
+
+.contenidoModal form input[type="text"],
+.contenidoModal form input[type="number"],
+.contenidoModal form textarea {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+    box-sizing: border-box; /* Asegura que el padding no afecte el ancho */
+}
+
+.contenidoModal form textarea {
+    resize: vertical; /* Permite al usuario ajustar la altura */
+}
+
+.accionesFormulario {
+    display: flex;
+    justify-content: flex-end; /* Alinea los botones a la derecha */
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.botonGuardar {
+    background-color: var(--primaryorange);
+    padding: 10px 20px;
+}
+
+.botonCancelar {
+    background-color: #ccc;
+    color: #333;
+    padding: 10px 20px;
+}
+.botonCancelar:hover {
+    background-color: #bbb;
+}
+
+/* Reutilizamos la clase .boton que ya tienes */
+.contenedorAcciones .boton {
+    padding: 10px 25px;
+    font-size: 14px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+/* Colores específicos para cada botón */
+.contenedorAcciones .botonAgregar { background-color: var(--primaryorange); }
+.contenedorAcciones .botonEditar { background-color: #3498db; } /* Azul */
+.contenedorAcciones .botonEliminar { background-color: #e74c3c; } /* Rojo */
+
+/* Estilo para los botones deshabilitados */
+.contenedorAcciones .boton:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* Estilo para la fila de la tabla cuando es seleccionada */
+.tablaDatos tbody tr.seleccionado {
+    background-color: #fef2e7; /* Un color naranja muy claro */
+    font-weight: bold;
+}
+
+/* Efecto hover para que el usuario sepa que las filas son clickeables */
+.tablaDatos tbody tr {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.tablaDatos tbody tr:hover {
+    background-color: #f5f5f5;
+}
+/* Estilo para el título principal de la sección */
+.seccion {
+    text-align: center; /* Centra el título */
+    margin-bottom: 30px; /* Espacio debajo */
+    font-size: 2.2em;
+    color: var(--darkgraytext);
+}
+
+/* El contenedor de acciones ya está centrado con el CSS anterior, pero nos aseguramos */
+.contenedorAcciones {
+    display: flex;
+    justify-content: center; /* Centra los botones */
+    gap: 15px;
+    margin-bottom: 30px;
+}
