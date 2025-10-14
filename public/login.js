@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (data.token) {
                 localStorage.setItem('authToken', data.token);
-                window.location.href = '/dashboard.html';
+                window.location.href = '/restaurante.html';
             } else {
                  throw new Error('No se recibió un token de autenticación.');
             }
