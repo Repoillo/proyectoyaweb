@@ -1,47 +1,72 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- NAVEGACIÓN PRINCIPAL Y ESTADO ---
+    // --- VERIFICAR SESIÓN AL CARGAR EL DASHBOARD ---
+    async function verificarAccesoDashboard() {
+        try {
+            const respuesta = await fetch('/api/auth/status', {credentials: 'include'});
+            if (!respuesta.ok) {
+                 // Si no hay sesión válida, redirige al login
+                 console.log('No hay sesión activa, redirigiendo al login...');
+                 window.location.href = '/index.html';
+            }
+            // Si la sesión es válida, la página continúa cargándose normalmente
+            console.log('Sesión activa verificada.');
+        } catch (error) {
+            console.error('Error verificando sesión en dashboard:', error);
+            // En caso de error de red, también redirigir al login podría ser una opción
+             window.location.href = '/index.html';
+        }
+    }
+    verificarAccesoDashboard(); // Llama a la función al cargar el dashboard
+
+
+    // --- NAVEGACIÓN PRINCIPAL Y ESTADO --- (sin cambios)
     const enlacesMenu = document.querySelectorAll('.menu a');
     const paneles = document.querySelectorAll('.panelContenido');
     const panelBienvenida = document.getElementById('panelBienvenida');
     const botonSalir = document.querySelector('.botonSalir');
-    
-    let seccionActiva = null; // Variable para saber en qué sección estamos
+    let seccionActiva = null;
 
-    // --- FUNCIONES CRUD GENÉRICAS ---
-
-    // 1. Carga los datos de cualquier sección y los pone en su tabla
+    // --- FUNCIÓN GENÉRICA PARA CARGAR DATOS (Actualizada con fetch options) ---
     async function cargarDatos(seccion) {
         try {
-            // Hacemos la petición a la API correcta (ej: /api/platillos)
-            const respuesta = await fetch(`/api/${seccion}`);
-            if (!respuesta.ok) throw new Error('No se pudieron cargar los datos.');
+            // Incluimos 'credentials: include' para que la cookie de sesión se envíe
+            const respuesta = await fetch(`/api/${seccion}`, { credentials: 'include' });
             
+            // Si la respuesta es 401 (No autorizado), redirige al login
+            if (respuesta.status === 401) {
+                window.location.href = '/index.html';
+                return; // Detiene la ejecución
+            }
+            if (!respuesta.ok) throw new Error('No se pudieron cargar los datos.');
+
             const datos = await respuesta.json();
             const panel = document.querySelector(`.panelContenido[data-seccion="${seccion}"]`);
             const cuerpoTabla = panel.querySelector('tbody');
-            
-            cuerpoTabla.innerHTML = ''; // Limpiamos la tabla antes de llenarla
+            cuerpoTabla.innerHTML = '';
 
-            // Creamos las filas dinámicamente
+            // Lógica para crear las filas (la que ya tenías)
             datos.forEach(item => {
                 const fila = document.createElement('tr');
-                fila.dataset.id = item.id; // Asumimos que cada item tiene un ID
+                // Asignamos el ID correcto dependiendo de la sección
+                let itemId;
+                if (seccion === 'platillos') itemId = item.id_platillo;
+                else if (seccion === 'bebidas') itemId = item.id_bebida;
+                // Añadir más 'else if' para las otras claves primarias (id_ing, id_postre, etc.)
                 
-                // Llenamos las celdas (esto se puede hacer más dinámico, pero empecemos así)
-                if (seccion === 'platillos') {
-                    fila.innerHTML = `
-                        <td>${item.nombre}</td>
-                        <td>${item.descripcion}</td>
-                        <td>$${item.precio}</td>
-                    `;
-                } else if (seccion === 'bebidas') {
-                    fila.innerHTML = `
-                        <td>${item.nombre}</td>
-                        <td>$${item.precio}</td>
-                    `;
-                }
-                // Añadir más 'else if' para otras secciones
+                fila.dataset.id = itemId || item.id; // Usamos el ID específico o 'id' como fallback
 
+                // Llenamos las celdas (la lógica que ya tenías)
+                if (seccion === 'platillos') {
+                     fila.innerHTML = `<td>${item.nombre_platillo}</td><td>${item.descripcion}</td><td>$${parseFloat(item.costo_platillo).toFixed(2)}</td>`;
+                } else if (seccion === 'bebidas') {
+                     fila.innerHTML = `<td>${item.nombre_bebida}</td><td>$${parseFloat(item.costo_bebida).toFixed(2)}</td>`;
+                } else if (seccion === 'ingredientes') {
+                     fila.innerHTML = `<td>${item.nombre_ing}</td><td>${item.unidad_medida || '-'}</td><td>$${parseFloat(item.costo_ing).toFixed(2)}</td><td>${item.cantidad_disponible}</td>`;
+                } else if (seccion === 'postres') {
+                     fila.innerHTML = `<td>${item.nombre_postre}</td><td>${item.descripcion}</td><td>$${parseFloat(item.costo_postre).toFixed(2)}</td>`;
+                } else if (seccion === 'empleados') {
+                     fila.innerHTML = `<td>${item.nombre_empleado}</td><td>${item.rol}</td><td>$${parseFloat(item.sueldo).toFixed(2)}</td>`;
+                }
                 cuerpoTabla.appendChild(fila);
             });
         } catch (error) {
@@ -49,15 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- LÓGICA DE EVENTOS ---
-    
+    // --- LÓGICA DE EVENTOS --- (sin cambios en la navegación)
     enlacesMenu.forEach(enlace => {
         enlace.addEventListener('click', (evento) => {
             evento.preventDefault();
-            
-            seccionActiva = enlace.dataset.seccion; // Actualizamos la sección activa
-            
-            // Lógica para mostrar/ocultar paneles (la que ya teníamos)
+            seccionActiva = enlace.dataset.seccion;
             enlacesMenu.forEach(link => link.classList.remove('activo'));
             enlace.classList.add('activo');
             panelBienvenida.classList.add('oculto');
@@ -65,61 +86,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const panelAMostrar = document.getElementById(enlace.dataset.target);
             if (panelAMostrar) {
                 panelAMostrar.classList.remove('oculto');
+                // Cargamos datos solo si no es el panel de finanzas (que aún no tiene tabla)
+                if (seccionActiva !== 'finanzas') {
+                     cargarDatos(seccionActiva);
+                }
             }
-            
-            // Llamamos a nuestra función genérica para cargar los datos
-            cargarDatos(seccionActiva);
         });
     });
 
-    botonSalir.addEventListener('click', () => {
-        localStorage.removeItem('authToken');
-        window.location.href = '/index.html';
-    });
-
-    
-    // --- LÓGICA DEL MODAL (YA EXISTENTE) ---
-    const modalPlatillo = document.getElementById('modalPlatillo');
-    const botonCancelarModal = document.querySelector('.botonCancelar');
-    const tituloModal = document.getElementById('tituloModal');
-
-    function mostrarModal() { modalPlatillo.classList.remove('oculto'); }
-    function ocultarModal() {
-        modalPlatillo.classList.add('oculto');
-        // Limpia la selección al cerrar el modal
-        const filaActiva = cuerpoTablaPlatillos.querySelector('.seleccionado');
-        if (filaActiva) {
-            filaActiva.classList.remove('seleccionado');
-            botonEditarPlatillo.disabled = true;
-            botonEliminarPlatillo.disabled = true;
-        }
-    }
-
-    botonCancelarModal.addEventListener('click', ocultarModal);
-    modalPlatillo.addEventListener('click', (evento) => {
-        if (evento.target === modalPlatillo) ocultarModal();
-    });
-
-    // Asignar acciones a los botones del CRUD
-    botonAgregarPlatillo.addEventListener('click', () => {
-        tituloModal.textContent = 'Agregar Platillo';
-        // Aquí podrías limpiar el formulario si es necesario
-        // document.getElementById('formularioPlatillo').reset();
-        mostrarModal();
-    });
-
-    botonEditarPlatillo.addEventListener('click', () => {
-        tituloModal.textContent = 'Editar Platillo';
-        // Aquí iría la lógica para cargar los datos de la fila en el formulario
-        mostrarModal();
-    });
-
-    botonEliminarPlatillo.addEventListener('click', () => {
-        // Lógica para confirmar y eliminar
-        if (confirm('¿Estás seguro de que quieres eliminar este platillo?')) {
-            // Aquí iría la lógica para eliminar el platillo
-            console.log('Platillo eliminado');
+    // --- BOTÓN SALIR (Actualizado para llamar a la API) ---
+    botonSalir.addEventListener('click', async () => {
+        try {
+            // Llama a la nueva ruta de logout en el backend
+            await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+            // Borra cualquier token JWT residual (aunque ya no se usa activamente)
+            localStorage.removeItem('authToken');
+            // Redirige al login
+            window.location.href = '/index.html';
+        } catch (error) {
+            console.error('Error al cerrar sesión:', error);
+            // Igualmente redirigir, aunque haya fallado la llamada
+            window.location.href = '/index.html';
         }
     });
 
+    // Aquí iría la lógica genérica para los modales, botones CRUD, etc.
 });

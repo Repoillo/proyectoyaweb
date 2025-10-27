@@ -1,25 +1,32 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Elementos para la animación ---
     const signUpButton = document.getElementById('signUpBtn');
     const signInButton = document.getElementById('signInBtn');
     const container = document.getElementById('container');
-
-    // --- Elementos para los formularios ---
     const formsesion = document.getElementById('formsesion');
     const formcuenta = document.getElementById('formcuenta');
     const loginerror = document.getElementById('loginerror');
     const registererror = document.getElementById('registererror');
 
-    // --- Lógica de Animación ---
-    signUpButton.addEventListener('click', () => {
-        container.classList.add("rightpanelactive");
-    });
+    // --- VERIFICAR SESIÓN AL CARGAR ---
+    async function verificarSesion() {
+        try {
+            const respuesta = await fetch('/api/auth/status', {credentials: 'include'}); // Include credentials for cookies
+            if (respuesta.ok) {
+                // Si la sesión es válida, redirige al dashboard
+                window.location.href = '/restaurante.html';
+            }
+            // Si no está ok (401), no hace nada y muestra el login
+        } catch (error) {
+            console.error('Error verificando sesión:', error);
+            // Podrías mostrar un mensaje si falla la conexión con el servidor
+        }
+    }
+    verificarSesion(); // Llama a la función al cargar la página
 
-    signInButton.addEventListener('click', () => {
-        container.classList.remove("rightpanelactive");
-    });
+    // --- Lógica de Animación --- (sin cambios)
+    signUpButton.addEventListener('click', () => container.classList.add("rightpanelactive"));
+    signInButton.addEventListener('click', () => container.classList.remove("rightpanelactive"));
 
-    // --- Lógica para enviar el formulario de Registro ---
     formcuenta.addEventListener('submit', async (e) => {
         e.preventDefault();
         registererror.textContent = '';
@@ -55,35 +62,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Lógica para enviar el formulario de Inicio de Sesión ---
+    // --- Formulario de Inicio de Sesión (Actualizado) ---
     formsesion.addEventListener('submit', async (e) => {
         e.preventDefault();
         loginerror.textContent = '';
-
         const correo = document.getElementById('loginemail').value;
         const contrasena = document.getElementById('loginpassword').value;
+        const datos = { correo_usuario: correo, contra: contrasena };
         
-        const datos = {
-            correo_usuario: correo,
-            contra: contrasena
-        };
-
         try {
             const res = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(datos)
+                body: JSON.stringify(datos),
+                credentials: 'include' // Importante para enviar/recibir cookies
             });
             const data = await res.json();
             if (!res.ok) {
                 throw new Error(data.message || 'Credenciales incorrectas.');
             }
-            if (data.token) {
-                localStorage.setItem('authToken', data.token);
-                window.location.href = '/restaurante.html';
-            } else {
-                 throw new Error('No se recibió un token de autenticación.');
-            }
+            // SI EL LOGIN ES EXITOSO, REDIRIGE AL DASHBOARD
+            window.location.href = '/restaurante.html';
+
         } catch (error) {
             loginerror.textContent = error.message;
         }
