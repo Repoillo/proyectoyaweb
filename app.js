@@ -1,22 +1,20 @@
-require('dotenv').config(); // Asegúrate que dotenv se carga primero
+require('dotenv').config();
 const express = require('express');
-const mysql = require('mysql2/promise'); // Usamos la versión con promesas para el pool
+const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const session = require('express-session'); // Paquete para sesiones
-const MySQLStore = require('express-mysql-session')(session); // Para guardar sesiones en MySQL
+const session = require('express-session');
+const MySQLStore = require('express-mysql-session')(session);
 
 const app = express();
 
 app.use(cors({
-    origin: 'http://localhost:10000', // Reemplaza con tu URL de frontend si es diferente
-    credentials: true // Importante para que las cookies funcionen con CORS
+    origin: 'http://localhost:10000',
+    credentials: true
 }));
 app.use(express.json());
 app.use(express.static('public'));
 
-// --- CONFIGURACIÓN DE LA BASE DE DATOS ---
-// Usamos un Pool para manejar múltiples conexiones (mejor para sesiones)
 const pool = mysql.createPool({
     host: process.env.MYSQL_HOST,
     user: process.env.MYSQL_USER,
@@ -27,63 +25,58 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
-// Mensaje para verificar la conexión inicial (opcional pero útil)
 pool.getConnection()
     .then(connection => {
         console.log('Conexión exitosa a la base de datos');
-        connection.release(); // Libera la conexión
+        connection.release();
     })
     .catch(err => {
         console.error('Error al conectar a la base de datos:', err);
     });
 
-// --- CONFIGURACIÓN DE SESIONES ---
-const sessionStore = new MySQLStore({
-    // Opciones para la tabla de sesiones (puedes dejar las por defecto)
-    // clearExpired: true,
-    // checkExpirationInterval: 900000, // Cada 15 minutos
-    // expiration: 86400000, // 1 día (se sobrescribe con cookie.maxAge)
-}, pool); // Usa el pool de conexiones
+const sessionStore = new MySQLStore({}, pool);
 
 app.use(session({
-    key: 'sid', // Nombre de la cookie de sesión
-    secret: process.env.SESSION_SECRET, // Clave secreta del .env
-    store: sessionStore, // Dónde guardar las sesiones
-    resave: false, // No volver a guardar si no hay cambios
-    saveUninitialized: false, // No guardar sesiones vacías
+    key: 'sid',
+    secret: process.env.SESSION_SECRET,
+    store: sessionStore,
+    resave: false,
+    saveUninitialized: false,
     cookie: {
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días en milisegundos
-        httpOnly: true, // La cookie no es accesible por JavaScript en el navegador (seguridad)
-        secure: false, // Poner 'true' en producción si usas HTTPS
-        sameSite: 'lax' // Protección contra ataques CSRF
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        secure: false,
+        sameSite: 'lax'
     }
 }));
 
-// === Middleware de Autenticación ===
-// Función para verificar si el usuario tiene una sesión activa
+// === Middlewares de Autorización ===
 function requireAuth(req, res, next) {
     if (req.session && req.session.userId) {
-        return next(); // Si hay sesión, continúa
+        return next();
     }
-    // Si no hay sesión, envía un error 401
     res.status(401).json({ message: 'No autorizado. Por favor, inicia sesión.' });
 }
 
-// === Rutas de Autenticación ===
+function requireOwner(req, res, next) {
+    if (req.session && req.session.rol === 'dueño') {
+        return next();
+    }
+    res.status(403).json({ message: 'Acceso prohibido. Requiere permisos de administrador.' });
+}
 
-// RUTA PARA REGISTRAR (sin cambios, solo quitamos la transacción manual si no la necesitas explícitamente)
-app.post('/api/auth/register', async (req, res) => { // Usamos async/await con el pool
+// === Rutas de Autenticación ===
+app.post('/api/auth/register', async (req, res) => {
     const { nombre_usuario, nombre_restaurante, correo_usuario, contra } = req.body;
     try {
         const contra_hash = await bcrypt.hash(contra, 10);
-        const [restaurantResult] = await pool.query('INSERT INTO restaurantes (nombre_restaurante) VALUES (?)', [nombre_restaurante]);
+        const [restaurantResult] = await pool.query('INSERT INTO restaurante (nombre_restaurante) VALUES (?)', [nombre_restaurante]);
         const id_restaurante = restaurantResult.insertId;
         await pool.query('INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, id_restaurante) VALUES (?, ?, ?, ?)',
             [nombre_usuario, correo_usuario, contra_hash, id_restaurante]);
         res.status(201).json({ message: "Usuario registrado exitosamente." });
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') {
-             // Devolvemos un mensaje más específico si es posible
              if (error.message.includes('correo_usuario')) {
                  return res.status(409).json({ message: 'El correo electrónico ya está en uso.' });
              } else if (error.message.includes('nombre_restaurante')) {
@@ -95,13 +88,12 @@ app.post('/api/auth/register', async (req, res) => { // Usamos async/await con e
     }
 });
 
-// RUTA PARA INICIAR SESIÓN (Actualizada para usar sesiones)
 app.post('/api/auth/login', async (req, res) => {
     const { correo_usuario, contra } = req.body;
     try {
-        const [results] = await pool.query('SELECT * FROM m_usuarios WHERE correo_usuario = ?', [correo_usuario]);
+        const [results] = await pool.query("SELECT * FROM m_usuarios WHERE correo_usuario = ? AND estado = 'activo'", [correo_usuario]);
         if (results.length === 0) {
-            return res.status(401).json({ message: 'Credenciales incorrectas.' });
+            return res.status(401).json({ message: 'Credenciales incorrectas o usuario inactivo.' });
         }
         const usuario = results[0];
         const esCorrecta = await bcrypt.compare(contra, usuario.contra_hash);
@@ -109,13 +101,12 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ message: 'Credenciales incorrectas.' });
         }
 
-        // Guardamos la información del usuario en la sesión
         req.session.userId = usuario.id_usuario;
-        req.session.restauranteId = usuario.id_restaurante; // Guardamos también el ID del restaurante
+        req.session.restauranteId = usuario.id_restaurante;
         req.session.nombreUsuario = usuario.nombre_usuario;
+        req.session.rol = usuario.rol; 
 
-        // Enviamos solo un mensaje de éxito, la cookie se establece automáticamente
-        res.json({ message: 'Inicio de sesión exitoso' });
+        res.json({ message: 'Inicio de sesión exitoso', rol: usuario.rol });
 
     } catch (error) {
         console.error('Error al iniciar sesión:', error);
@@ -123,49 +114,370 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// RUTA PARA CERRAR SESIÓN
 app.post('/api/auth/logout', (req, res) => {
     req.session.destroy(err => {
         if (err) {
             console.error('Error al cerrar sesión:', err);
             return res.status(500).json({ message: 'Error al cerrar sesión' });
         }
-        // Limpiamos la cookie del navegador
-        res.clearCookie('sid'); // Asegúrate que 'sid' coincide con la 'key' de la sesión
+        res.clearCookie('sid');
         res.json({ message: 'Has cerrado sesión' });
     });
 });
 
-// RUTA PARA VERIFICAR ESTADO DE SESIÓN (para el frontend)
 app.get('/api/auth/status', requireAuth, (req, res) => {
-    // Si requireAuth pasa, significa que hay sesión. Devolvemos los datos.
     res.json({
         loggedIn: true,
         userId: req.session.userId,
         restauranteId: req.session.restauranteId,
-        nombreUsuario: req.session.nombreUsuario
+        nombreUsuario: req.session.nombreUsuario,
+        rol: req.session.rol
     });
 });
 
 
-// === Rutas CRUD (Protegidas) ===
-// Aquí irán tus rutas para /api/platillos, /api/bebidas, etc.
-// Ejemplo:
-app.get('/api/platillos', requireAuth, async (req, res) => {
+// === RUTAS CRUD (PROTEGIDAS) ===
+
+// --- PRODUCTOS (ACTUALIZADO CON RECETAS) ---
+app.get('/api/productos', requireAuth, requireOwner, async (req, res) => {
     try {
-        // Obtenemos solo los platillos del restaurante del usuario logueado
-        const [platillos] = await pool.query(
-            'SELECT id_platillo as id, nombre_platillo as nombre, descripcion, costo_platillo as precio FROM eplatillos WHERE id_restaurante = ?', 
+        const [productos] = await pool.query(
+            `SELECT 
+                id_producto, nombre, descripcion, precio_venta, tipo 
+             FROM productos 
+             WHERE id_restaurante = ? AND estado = 'activo'`, 
             [req.session.restauranteId]
         );
-        res.json(platillos);
+        res.json(productos);
     } catch(error) {
-        console.error('Error al obtener platillos:', error);
-        res.status(500).json({message: 'Error al cargar los platillos.'});
+        console.error('Error al obtener productos:', error);
+        res.status(500).json({message: 'Error al cargar los productos.'});
     }
 });
 
-// ... (Añadir aquí las demás rutas GET, POST, PUT, DELETE para todas las secciones, usando requireAuth)
+app.post('/api/productos', requireAuth, requireOwner, async (req, res) => {
+    const { nombre, descripcion, precio_venta, tipo, receta } = req.body;
+    const id_restaurante = req.session.restauranteId;
+    
+    // Iniciar transacción
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+        // 1. Insertar el producto
+        const [productoResult] = await connection.query(
+            `INSERT INTO productos (id_restaurante, nombre, descripcion, precio_venta, tipo) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [id_restaurante, nombre, descripcion, precio_venta, tipo]
+        );
+        
+        const id_producto = productoResult.insertId;
+
+        // 2. Insertar la receta (si existe)
+        if (receta && receta.length > 0) {
+            const valoresReceta = receta.map(item => [id_producto, item.id_ingrediente, item.cantidad_usada]);
+            await connection.query(
+                `INSERT INTO recetas (id_producto, id_ingrediente, cantidad_usada) VALUES ?`,
+                [valoresReceta]
+            );
+        }
+
+        // 3. Confirmar transacción
+        await connection.commit();
+        res.status(201).json({ message: 'Producto y receta creados exitosamente.' });
+
+    } catch(error) {
+        // 4. Revertir en caso de error
+        await connection.rollback();
+        console.error('Error al crear producto con receta:', error);
+        res.status(500).json({message: 'Error al crear el producto.'});
+    } finally {
+        connection.release();
+    }
+});
+
+app.put('/api/productos/:id', requireAuth, requireOwner, async (req, res) => {
+    const { id } = req.params;
+    const { nombre, descripcion, precio_venta, tipo, receta } = req.body;
+    const id_restaurante = req.session.restauranteId;
+
+    // Iniciar transacción
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+        // 1. Actualizar el producto
+        await connection.query(
+            `UPDATE productos 
+             SET nombre = ?, descripcion = ?, precio_venta = ?, tipo = ? 
+             WHERE id_producto = ? AND id_restaurante = ?`,
+            [nombre, descripcion, precio_venta, tipo, id, id_restaurante]
+        );
+
+        // 2. Borrar la receta anterior
+        await connection.query(
+            `DELETE FROM recetas WHERE id_producto = ?`,
+            [id]
+        );
+
+        // 3. Insertar la nueva receta (si existe)
+        if (receta && receta.length > 0) {
+            const valoresReceta = receta.map(item => [id, item.id_ingrediente, item.cantidad_usada]);
+            await connection.query(
+                `INSERT INTO recetas (id_producto, id_ingrediente, cantidad_usada) VALUES ?`,
+                [valoresReceta]
+            );
+        }
+
+        // 4. Confirmar transacción
+        await connection.commit();
+        res.json({ message: 'Producto y receta actualizados exitosamente.' });
+
+    } catch(error) {
+        // 5. Revertir en caso de error
+        await connection.rollback();
+        console.error('Error al actualizar producto con receta:', error);
+        res.status(500).json({message: 'Error al actualizar el producto.'});
+    } finally {
+        connection.release();
+    }
+});
+
+app.delete('/api/productos/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        await pool.query(
+            `UPDATE productos SET estado = 'inactivo' 
+             WHERE id_producto = ? AND id_restaurante = ?`,
+            [id, req.session.restauranteId]
+        );
+        res.json({ message: 'Producto inactivado exitosamente.' });
+    } catch(error) {
+        console.error('Error al inactivar producto:', error);
+        res.status(500).json({message: 'Error al inactivar el producto.'});
+    }
+});
+
+
+// --- RECETAS (NUEVAS RUTAS) ---
+// Obtiene la receta de UN producto (para el modal de Editar)
+app.get('/api/recetas/:id_producto', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id_producto } = req.params;
+        const [receta] = await pool.query(
+            `SELECT id_ingrediente, cantidad_usada 
+             FROM recetas 
+             WHERE id_producto = ?`,
+            [id_producto]
+        );
+        res.json(receta);
+    } catch(error) {
+        console.error('Error al obtener receta:', error);
+        res.status(500).json({message: 'Error al cargar la receta.'});
+    }
+});
+
+
+// --- INGREDIENTES (CRUD COMPLETO) ---
+app.get('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [ingredientes] = await pool.query(
+            `SELECT 
+                id_ingrediente AS id_ing,
+                id_ingrediente, 
+                nombre AS nombre_ing,
+                nombre, 
+                unidad_medida, 
+                costo_unitario AS costo_ing, 
+                stock AS cantidad_disponible 
+             FROM ingredientes 
+             WHERE id_restaurante = ? AND estado = 'activo'`, 
+            [req.session.restauranteId]
+        );
+        res.json(ingredientes);
+    } catch(error) {
+        console.error('Error al obtener ingredientes:', error);
+        res.status(500).json({message: 'Error al cargar los ingredientes.'});
+    }
+});
+
+app.post('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { nombre, unidad_medida, costo_unitario, stock } = req.body;
+        const id_restaurante = req.session.restauranteId;
+        
+        await pool.query(
+            `INSERT INTO ingredientes (id_restaurante, nombre, unidad_medida, costo_unitario, stock, estado) 
+             VALUES (?, ?, ?, ?, ?, 'activo')`,
+            [id_restaurante, nombre, unidad_medida, costo_unitario, stock]
+        );
+        res.status(201).json({ message: 'Ingrediente creado exitosamente.' });
+    } catch(error) {
+        console.error('Error al crear ingrediente:', error);
+        res.status(500).json({message: 'Error al crear el ingrediente.'});
+    }
+});
+
+app.put('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nombre, unidad_medida, costo_unitario, stock } = req.body;
+        const id_restaurante = req.session.restauranteId;
+        
+        await pool.query(
+            `UPDATE ingredientes 
+             SET nombre = ?, unidad_medida = ?, costo_unitario = ?, stock = ? 
+             WHERE id_ingrediente = ? AND id_restaurante = ?`,
+            [nombre, unidad_medida, costo_unitario, stock, id, id_restaurante]
+        );
+        res.json({ message: 'Ingrediente actualizado exitosamente.' });
+    } catch(error) {
+        console.error('Error al actualizar ingrediente:', error);
+        res.status(500).json({message: 'Error al actualizar el ingrediente.'});
+    }
+});
+
+app.delete('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        await pool.query(
+            `UPDATE ingredientes SET estado = 'inactivo' 
+             WHERE id_ingrediente = ? AND id_restaurante = ?`,
+            [id, req.session.restauranteId]
+        );
+        res.json({ message: 'Ingrediente inactivado exitosamente.' });
+    } catch(error) {
+        console.error('Error al inactivar ingrediente:', error);
+        res.status(500).json({message: 'Error al inactivar el ingrediente.'});
+    }
+});
+
+
+// --- EMPLEADOS (CRUD) ---
+app.get('/api/empleados', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [empleados] = await pool.query(
+            `SELECT 
+                id_empleado, 
+                nombre_empleado, 
+                rol, 
+                sueldo 
+             FROM empleados 
+             WHERE id_restaurante = ? AND estado = 'activo'`, 
+            [req.session.restauranteId]
+        );
+        res.json(empleados);
+    } catch(error) {
+        console.error('Error al obtener empleados:', error);
+        res.status(500).json({message: 'Error al cargar los empleados.'});
+    }
+});
+// POST (Crear) - /api/empleados
+app.post('/api/empleados', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { nombre_empleado, rol, sueldo } = req.body;
+        const id_restaurante = req.session.restauranteId;
+        
+        await pool.query(
+            `INSERT INTO empleados (id_restaurante, nombre_empleado, rol, sueldo, estado) 
+             VALUES (?, ?, ?, ?, 'activo')`,
+            [id_restaurante, nombre_empleado, rol, sueldo]
+        );
+        res.status(201).json({ message: 'Empleado creado exitosamente.' });
+    } catch(error) {
+        console.error('Error al crear empleado:', error);
+        res.status(500).json({message: 'Error al crear el empleado.'});
+    }
+});
+
+// PUT (Actualizar) - /api/empleados/:id
+app.put('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nombre_empleado, rol, sueldo } = req.body;
+        const id_restaurante = req.session.restauranteId;
+        
+        await pool.query(
+            `UPDATE empleados 
+             SET nombre_empleado = ?, rol = ?, sueldo = ? 
+             WHERE id_empleado = ? AND id_restaurante = ?`,
+            [nombre_empleado, rol, sueldo, id, id_restaurante]
+        );
+        res.json({ message: 'Empleado actualizado exitosamente.' });
+    } catch(error) {
+        console.error('Error al actualizar empleado:', error);
+        res.status(500).json({message: 'Error al actualizar el empleado.'});
+    }
+});
+
+// DELETE (Soft Delete) - /api/empleados/:id
+app.delete('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const id_restaurante = req.session.restauranteId;
+        
+        await pool.query(
+            `UPDATE empleados SET estado = 'inactivo' 
+             WHERE id_empleado = ? AND id_restaurante = ?`,
+            [id, id_restaurante]
+        );
+        res.json({ message: 'Empleado inactivado exitosamente.' });
+    } catch(error) {
+        console.error('Error al inactivar empleado:', error);
+        res.status(500).json({message: 'Error al inactivar el empleado.'});
+    }
+});
+
+// === RUTAS DE PEDIDOS (Para el Chef y el Dueño) ===
+app.get('/api/pedidos/activos', requireAuth, async (req, res) => {
+    try {
+        const [pedidosActivos] = await pool.query(
+            `SELECT * FROM pedidos 
+             WHERE id_restaurante = ? AND (estado = 'sin ver' OR estado = 'en proceso')
+             ORDER BY fecha_creacion ASC`,
+            [req.session.restauranteId]
+        );
+        res.json(pedidosActivos);
+    } catch(error) {
+        console.error('Error al obtener pedidos activos:', error);
+        res.status(500).json({message: 'Error al cargar los pedidos.'});
+    }
+});
+
+app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nuevoEstado } = req.body;
+        
+        if (!['en proceso', 'completado', 'cancelado'].includes(nuevoEstado)) {
+            return res.status(400).json({ message: 'Estado no válido.' });
+        }
+        
+        await pool.query(
+            "UPDATE pedidos SET estado = ? WHERE id_pedido = ? AND id_restaurante = ?",
+            [nuevoEstado, id, req.session.restauranteId]
+        );
+        res.json({ message: `Pedido ${id} actualizado a ${nuevoEstado}`});
+    } catch(error) {
+        console.error('Error al actualizar estado de pedido:', error);
+        res.status(500).json({message: 'Error al actualizar el pedido.'});
+    }
+});
+
+app.get('/api/pedidos/completados', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [pedidosCompletados] = await pool.query(
+            `SELECT * FROM pedidos 
+             WHERE id_restaurante = ? AND estado = 'completado'
+             ORDER BY fecha_creacion DESC`,
+            [req.session.restauranteId]
+        );
+        res.json(pedidosCompletados);
+    } catch(error) {
+        console.error('Error al obtener pedidos completados:', error);
+        res.status(500).json({message: 'Error al cargar los pedidos completados.'});
+    }
+});
 
 
 const PORT = process.env.PORT || 10000;

@@ -496,3 +496,51 @@ input {
     gap: 15px;
     margin-bottom: 30px;
 }
+.tablaDatos {
+    width: 100%;
+    border-collapse: collapse; /* Bordes limpios */
+    margin-top: 20px;
+    font-size: 16px;
+    text-align: left;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05); /* Sombra sutil */
+    border-radius: 8px;
+    overflow: hidden; /* Para que la sombra respete el radio */
+}
+
+.tablaDatos thead tr {
+    background-color: var(--primaryblue);
+    color: var(--lightgraytext);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tablaDatos th,
+.tablaDatos td {
+    padding: 15px 20px; /* Más espacio */
+    border-bottom: 1px solid var(--lightgray); /* Líneas sutiles */
+}
+
+.tablaDatos tbody tr {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.tablaDatos tbody tr:nth-of-type(even) {
+    background-color: #f9f9f9; /* Rayado tipo cebra */
+}
+
+.tablaDatos tbody tr:last-of-type {
+    border-bottom: 2px solid var(--primaryblue);
+}
+
+.tablaDatos tbody tr:hover {
+    background-color: #f1f1f1; /* Hover más notable */
+}
+
+/* El estilo de selección que ya tenías, pero con !important para asegurar */
+.tablaDatos tbody tr.seleccionado {
+    background-color: #fef2e7 !important; /* Naranja claro */
+    color: var(--primaryorange);
+    font-weight: bold;
+}

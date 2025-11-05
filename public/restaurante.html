@@ -16,10 +16,9 @@
             <h2 class="logo">Mi Restaurante</h2>
             <nav class="menu">
                 <ul>
-                    <li><a href="#" data-target="panelPlatillos" data-seccion="platillos"><ion-icon name="fast-food-outline"></ion-icon> Platillos</a></li>
-                    <li><a href="#" data-target="panelBebidas" data-seccion="bebidas"><ion-icon name="cafe-outline"></ion-icon> Bebidas</a></li>
+                    <li><a href="#" data-target="panelProductos" data-seccion="productos"><ion-icon name="fast-food-outline"></ion-icon> Productos</a></li>
+                    
                     <li><a href="#" data-target="panelIngredientes" data-seccion="ingredientes"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
-                    <li><a href="#" data-target="panelPostres" data-seccion="postres"><ion-icon name="ice-cream-outline"></ion-icon> Postres</a></li>
                     <li><a href="#" data-target="panelEmpleados" data-seccion="empleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
                     <li><a href="#" data-target="panelFinanzas" data-seccion="finanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
                 </ul>
@@ -35,8 +34,8 @@
                 <p>Selecciona una categoría del panel para comenzar.</p>
             </div>
 
-            <div id="panelPlatillos" class="panelContenido oculto" data-seccion="platillos">
-                <h1 class="seccion">Gestión de Platillos</h1>
+            <div id="panelProductos" class="panelContenido oculto" data-seccion="productos">
+                <h1 class="seccion">Gestión de Productos</h1>
                 <div class="contenedorAcciones">
                     <button class="boton botonAgregar">Agregar</button>
                     <button class="boton botonEditar" disabled>Editar</button>
@@ -46,25 +45,8 @@
                     <thead>
                         <tr>
                             <th>Nombre</th>
+                            <th>Tipo</th>
                             <th>Descripción</th>
-                            <th>Precio</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-
-            <div id="panelBebidas" class="panelContenido oculto" data-seccion="bebidas">
-                <h1 class="seccion">Gestión de Bebidas</h1>
-                <div class="contenedorAcciones">
-                    <button class="boton botonAgregar">Agregar</button>
-                    <button class="boton botonEditar" disabled>Editar</button>
-                    <button class="boton botonEliminar" disabled>Eliminar</button>
-                </div>
-                <table class="tablaDatos">
-                    <thead>
-                        <tr>
-                            <th>Nombre</th>
                             <th>Precio</th>
                         </tr>
                     </thead>
@@ -92,25 +74,6 @@
                 </table>
             </div>
 
-            <div id="panelPostres" class="panelContenido oculto" data-seccion="postres">
-                <h1 class="seccion">Gestión de Postres</h1>
-                <div class="contenedorAcciones">
-                    <button class="boton botonAgregar">Agregar</button>
-                    <button class="boton botonEditar" disabled>Editar</button>
-                    <button class="boton botonEliminar" disabled>Eliminar</button>
-                </div>
-                <table class="tablaDatos">
-                    <thead>
-                        <tr>
-                            <th>Nombre</th>
-                            <th>Descripción</th>
-                            <th>Precio</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-
             <div id="panelEmpleados" class="panelContenido oculto" data-seccion="empleados">
                 <h1 class="seccion">Gestión de Empleados</h1>
                 <div class="contenedorAcciones">
@@ -132,7 +95,7 @@
             
             <div id="panelFinanzas" class="panelContenido oculto" data-seccion="finanzas">
                 <h1 class="seccion">Finanzas</h1>
-                </div>
+            </div>
 
         </main>
     </div>
