@@ -63,7 +63,7 @@ CREATE TABLE `empleados` (
   PRIMARY KEY (`id_empleado`),
   KEY `fk_empleados_restaurante` (`id_restaurante`),
   CONSTRAINT `fk_empleados_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -72,6 +72,7 @@ CREATE TABLE `empleados` (
 
 LOCK TABLES `empleados` WRITE;
 /*!40000 ALTER TABLE `empleados` DISABLE KEYS */;
+INSERT INTO `empleados` VALUES (1,1,'Angel','Gerente',150000.00,'activo');
 /*!40000 ALTER TABLE `empleados` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -93,7 +94,7 @@ CREATE TABLE `ingredientes` (
   PRIMARY KEY (`id_ingrediente`),
   UNIQUE KEY `idx_restaurante_nombre_ing` (`id_restaurante`,`nombre`),
   CONSTRAINT `fk_ingredientes_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -102,6 +103,7 @@ CREATE TABLE `ingredientes` (
 
 LOCK TABLES `ingredientes` WRITE;
 /*!40000 ALTER TABLE `ingredientes` DISABLE KEYS */;
+INSERT INTO `ingredientes` VALUES (1,1,'bistec','gr',30.00,1000.00,'activo'),(2,1,'tortilla','gr',2.50,2000.00,'activo');
 /*!40000 ALTER TABLE `ingredientes` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -133,7 +135,7 @@ CREATE TABLE `m_usuarios` (
 
 LOCK TABLES `m_usuarios` WRITE;
 /*!40000 ALTER TABLE `m_usuarios` DISABLE KEYS */;
-INSERT INTO `m_usuarios` VALUES (1,1,'angel','hola@gmail.com','$2b$10$EE/JO6m5gtqJ2zTPmjc65.JpKSugGU9E8/.mrwXc4Bq9GRk7os4JO','cocinero','activo');
+INSERT INTO `m_usuarios` VALUES (1,1,'angel','hola@gmail.com','$2b$10$EE/JO6m5gtqJ2zTPmjc65.JpKSugGU9E8/.mrwXc4Bq9GRk7os4JO','dueño','activo');
 /*!40000 ALTER TABLE `m_usuarios` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -244,7 +246,7 @@ CREATE TABLE `productos` (
   PRIMARY KEY (`id_producto`),
   UNIQUE KEY `idx_restaurante_nombre_prod` (`id_restaurante`,`nombre`),
   CONSTRAINT `fk_productos_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -253,6 +255,7 @@ CREATE TABLE `productos` (
 
 LOCK TABLES `productos` WRITE;
 /*!40000 ALTER TABLE `productos` DISABLE KEYS */;
+INSERT INTO `productos` VALUES (1,1,'Taco','taco sabroso',18.00,'platillo','inactivo'),(2,1,'agua de horchata','sin azucar',25.00,'bebida','activo'),(3,1,'taco de bistec','no hay salsa',18.00,'platillo','activo');
 /*!40000 ALTER TABLE `productos` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -280,6 +283,7 @@ CREATE TABLE `recetas` (
 
 LOCK TABLES `recetas` WRITE;
 /*!40000 ALTER TABLE `recetas` DISABLE KEYS */;
+INSERT INTO `recetas` VALUES (3,1,100.00),(3,2,30.00);
 /*!40000 ALTER TABLE `recetas` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -329,7 +333,7 @@ CREATE TABLE `sessions` (
 
 LOCK TABLES `sessions` WRITE;
 /*!40000 ALTER TABLE `sessions` DISABLE KEYS */;
-INSERT INTO `sessions` VALUES ('coEv2KCZvyHq76kXxtgFZQE6ZJ0-cAly',1762967059,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-11-12T17:00:57.846Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\"}');
+INSERT INTO `sessions` VALUES ('Zkfbpvu9uHdDcLKowVcyG1uKzIVeO27i',1762971070,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-11-12T17:59:41.368Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}');
 /*!40000 ALTER TABLE `sessions` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -350,4 +354,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-11-05 11:14:09
+-- Dump completed on 2025-11-05 12:12:56
