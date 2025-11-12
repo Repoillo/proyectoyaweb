@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- VERIFICACIÓN DE SESIÓN ---
+
     async function verificarAccesoDashboard() {
         try {
             const respuesta = await fetch('/api/auth/status', {credentials: 'include'});
@@ -32,7 +32,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const paneles = document.querySelectorAll('.panelContenido');
     const panelBienvenida = document.getElementById('panelBienvenida');
     const botonSalir = document.querySelector('.botonSalir');
-    
+    const panelPedidosCompletados = document.getElementById('panelPedidosCompletados');
+    const listaPedidosCompletados = document.getElementById('listaPedidosCompletados');
+    const detallePedidoCompletado = document.getElementById('detallePedidoCompletado');
+    const btnVolverALista = document.getElementById('btnVolverALista');
+    const btnArchivarTodos = document.getElementById('btnArchivarTodos'); // <-- AÑADIR ESTE
     // --- ELEMENTOS DEL MODAL ---
     const modal = document.getElementById('modal');
     const tituloModal = document.getElementById('tituloModal');
@@ -135,7 +139,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const panelAMostrar = document.getElementById(enlace.dataset.target);
             if (panelAMostrar) {
                 panelAMostrar.classList.remove('oculto');
-                if (seccionActiva !== 'finanzas') {
+                if (seccionActiva === 'pedidos_completados') {
+                    cargarPedidosCompletados(); // Nueva función
+                } else if (seccionActiva !== 'finanzas') {
                      cargarDatos(seccionActiva);
                 }
             }
@@ -436,5 +442,155 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error al cerrar sesión:', error);
             window.location.href = '/index.html';
         }
+    });
+    // --- LÓGICA DE PEDIDOS COMPLETADOS ---
+
+    async function cargarPedidosCompletados() {
+        // Mostrar la lista y ocultar el detalle
+        listaPedidosCompletados.classList.remove('oculto');
+        detallePedidoCompletado.classList.add('oculto');
+        listaPedidosCompletados.innerHTML = '<p>Cargando pedidos...</p>';
+
+        try {
+            const res = await fetch('/api/pedidos/completados', { credentials: 'include' });
+            if (res.status === 401) {
+                window.location.href = '/index.html';
+                return;
+            }
+            if (!res.ok) throw new Error('No se pudieron cargar los pedidos.');
+
+            const pedidos = await res.json();
+            listaPedidosCompletados.innerHTML = ''; // Limpiar "Cargando..."
+
+            if (pedidos.length === 0) {
+                listaPedidosCompletados.innerHTML = '<p>No hay pedidos completados para mostrar.</p>';
+                return;
+            }
+
+            pedidos.forEach(pedido => {
+                const fecha = new Date(pedido.fecha_creacion).toLocaleDateString('es-ES', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric'
+                });
+                
+                const pedidoItem = document.createElement('div');
+                pedidoItem.classList.add('pedido-item');
+                pedidoItem.dataset.id = pedido.id_pedido;
+                pedidoItem.innerHTML = `
+                    <h3>${fecha}</h3>
+                    <p>$${parseFloat(pedido.total_calculado).toFixed(2)}</p>
+                `;
+
+                // Añadir listener para ver detalles
+                pedidoItem.addEventListener('click', () => {
+                    mostrarDetallePedido(pedido.id_pedido);
+                });
+                
+                listaPedidosCompletados.appendChild(pedidoItem);
+            });
+
+        } catch (error) {
+            console.error('Error cargando pedidos completados:', error);
+            listaPedidosCompletados.innerHTML = '<p>Error al cargar los pedidos.</p>';
+        }
+    }
+
+    async function mostrarDetallePedido(idPedido) {
+        // Ocultar la lista y mostrar el detalle
+        listaPedidosCompletados.classList.add('oculto');
+        detallePedidoCompletado.classList.remove('oculto');
+
+        // Referencias a los elementos de detalle
+        const titulo = document.getElementById('detallePedidoTitulo');
+        const total = document.getElementById('detallePedidoTotal');
+        const listaProductos = document.getElementById('detalleProductosLista');
+        const listaIngredientes = document.getElementById('detalleIngredientesLista');
+
+        // Limpiar contenido anterior
+        titulo.textContent = 'Cargando detalle...';
+        total.textContent = '';
+        listaProductos.innerHTML = '';
+        listaIngredientes.innerHTML = '';
+
+        try {
+            const res = await fetch(`/api/pedidos/completados/${idPedido}`, { credentials: 'include' });
+            if (!res.ok) throw new Error('No se pudo cargar el detalle.');
+            
+            const detalle = await res.json();
+
+            // Formatear fecha
+            const fecha = new Date(detalle.info.fecha_creacion).toLocaleString('es-ES', {
+                dateStyle: 'full', timeStyle: 'short'
+            });
+
+            // Llenar datos
+            titulo.textContent = `Detalle del Pedido (Mesa: ${detalle.info.mesa}) - ${fecha}`;
+            total.textContent = `Total Pagado: $${parseFloat(detalle.info.total_calculado).toFixed(2)}`;
+
+            // Llenar productos
+            if (detalle.productos.length > 0) {
+                detalle.productos.forEach(prod => {
+                    listaProductos.innerHTML += `
+                        <li>
+                            ${prod.cantidad}x ${prod.nombre}
+                            <span>$${(prod.cantidad * prod.precio_en_pedido).toFixed(2)}</span>
+                        </li>`;
+                });
+            } else {
+                listaProductos.innerHTML = '<li>No se encontraron productos en este pedido.</li>';
+            }
+
+            // Llenar ingredientes
+            if (detalle.ingredientes.length > 0) {
+                detalle.ingredientes.forEach(ing => {
+                    listaIngredientes.innerHTML += `
+                        <li>
+                            ${ing.nombre}
+                            <span>${ing.total_gastado} ${ing.unidad_medida}</span>
+                        </li>`;
+                });
+            } else {
+                listaIngredientes.innerHTML = '<li>Este pedido no utilizó ingredientes (ej. solo bebidas sin receta).</li>';
+            }
+
+        } catch (error) {
+            console.error('Error mostrando detalle:', error);
+            titulo.textContent = 'Error al cargar el detalle';
+        }
+    }
+
+    // Botón para volver del detalle a la lista
+    btnVolverALista.addEventListener('click', () => {
+        detallePedidoCompletado.classList.add('oculto');
+        listaPedidosCompletados.classList.remove('oculto');
+    });
+    // --- BOTÓN ARCHIVAR TODOS LOS PEDIDOS COMPLETADOS ---
+btnArchivarTodos.addEventListener('click', async () => {
+    if (!confirm('¿Estás seguro de que quieres archivar TODOS los pedidos completados? Esta acción no se puede deshacer.')) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/pedidos/archivar-completados', {
+            method: 'PUT',
+            credentials: 'include'
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            throw new Error(data.message || 'No se pudo archivar.');
+        }
+
+        alert(`¡Éxito! ${data.pedidosArchivados} pedidos fueron archivados.`);
+
+        // Recargamos la lista para que se vean los cambios (la lista aparecerá vacía)
+        cargarPedidosCompletados();
+
+    } catch (error) {
+        console.error('Error al archivar:', error);
+        alert(`Error: ${error.message}`);
+    }
     });
 });

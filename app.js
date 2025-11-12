@@ -445,25 +445,108 @@ app.get('/api/pedidos/activos', requireAuth, async (req, res) => {
 });
 
 app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const { nuevoEstado } = req.body;
+    const id_restaurante = req.session.restauranteId;
+
+    if (!['en proceso', 'completado', 'cancelado'].includes(nuevoEstado)) {
+        return res.status(400).json({ message: 'Estado no válido.' });
+    }
+
+    // Iniciar transacción
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
     try {
-        const { id } = req.params;
-        const { nuevoEstado } = req.body;
-        
-        if (!['en proceso', 'completado', 'cancelado'].includes(nuevoEstado)) {
-            return res.status(400).json({ message: 'Estado no válido.' });
+        // --- LÓGICA DE VALIDACIÓN Y DESCUENTO DE INVENTARIO ---
+        // Solo aplica si el intento es cambiar a 'completado'
+        if (nuevoEstado === 'completado') {
+            
+            // 1. Verificamos el estado ACTUAL para evitar dobles descuentos
+            const [pedidoActual] = await connection.query(
+                "SELECT estado FROM pedidos WHERE id_pedido = ? AND id_restaurante = ?",
+                [id, id_restaurante]
+            );
+
+            if (pedidoActual.length === 0) {
+                throw new Error('Pedido no encontrado.');
+            }
+            if (pedidoActual[0].estado === 'completado') {
+                await connection.commit(); // No hacemos nada, ya estaba completado
+                connection.release();
+                return res.json({ message: 'Este pedido ya estaba completado.' });
+            }
+
+            // 2. [NUEVO] OBTENER REQUERIMIENTOS VS. STOCK ACTUAL
+            // Obtenemos una lista de lo que el pedido necesita y lo que hay.
+            const [ingredientesRequeridos] = await connection.query(
+                `SELECT 
+                    i.id_ingrediente, 
+                    i.nombre, 
+                    i.stock AS stock_actual, 
+                    SUM(r.cantidad_usada * pd.cantidad) AS stock_requerido
+                 FROM pedido_detalles pd
+                 JOIN recetas r ON pd.id_producto = r.id_producto
+                 JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+                 WHERE pd.id_pedido = ? AND i.id_restaurante = ?
+                 GROUP BY i.id_ingrediente, i.nombre, i.stock`,
+                [id, id_restaurante]
+            );
+
+            // 3. [NUEVO] VALIDAR SI HAY STOCK SUFICIENTE
+            const ingredientesFaltantes = [];
+            for (const ing of ingredientesRequeridos) {
+                if (parseFloat(ing.stock_actual) < parseFloat(ing.stock_requerido)) {
+                    ingredientesFaltantes.push(
+                        `${ing.nombre} (requiere ${ing.stock_requerido}, tiene ${ing.stock_actual})`
+                    );
+                }
+            }
+
+            // 4. [NUEVO] SI FALTA ALGO, RECHAZAR LA TRANSACCIÓN
+            if (ingredientesFaltantes.length > 0) {
+                await connection.rollback(); // Deshacemos todo
+                connection.release();
+                // 409 Conflict es un buen código HTTP para "no se puede hacer por un conflicto de estado"
+                return res.status(409).json({
+                    message: `No se puede completar el pedido. Stock insuficiente para: ${ingredientesFaltantes.join(', ')}`
+                });
+            }
+
+            // 5. SI LLEGAMOS AQUÍ, HAY STOCK. Procedemos a descontar.
+            // (Podemos re-usar el bucle anterior, o ejecutar la consulta JOIN)
+            await connection.query(
+                `UPDATE ingredientes i
+                 JOIN recetas r ON i.id_ingrediente = r.id_ingrediente
+                 JOIN pedido_detalles pd ON r.id_producto = pd.id_producto
+                 SET i.stock = i.stock - (r.cantidad_usada * pd.cantidad)
+                 WHERE pd.id_pedido = ? AND i.id_restaurante = ?`,
+                [id, id_restaurante]
+            );
         }
         
-        await pool.query(
+        // --- FIN DE LÓGICA DE DESCUENTO ---
+
+        // 6. Actualizamos el estado del pedido
+        await connection.query(
             "UPDATE pedidos SET estado = ? WHERE id_pedido = ? AND id_restaurante = ?",
-            [nuevoEstado, id, req.session.restauranteId]
+            [nuevoEstado, id, id_restaurante]
         );
-        res.json({ message: `Pedido ${id} actualizado a ${nuevoEstado}`});
-    } catch(error) {
-        console.error('Error al actualizar estado de pedido:', error);
-        res.status(500).json({message: 'Error al actualizar el pedido.'});
+
+        // 7. Si todo salió bien, confirmamos la transacción
+        await connection.commit();
+        res.json({ message: `Pedido ${id} actualizado a ${nuevoEstado}. Stock validado y descontado.` });
+
+    } catch (error) {
+        // Si algo falló, revertimos todo
+        await connection.rollback();
+        console.error('Error en la transacción del pedido:', error);
+        res.status(500).json({ message: `Error al actualizar el pedido: ${error.message}` });
+    } finally {
+        // Siempre liberamos la conexión
+        connection.release();
     }
 });
-
 app.get('/api/pedidos/completados', requireAuth, requireOwner, async (req, res) => {
     try {
         const [pedidosCompletados] = await pool.query(
@@ -478,7 +561,79 @@ app.get('/api/pedidos/completados', requireAuth, requireOwner, async (req, res) 
         res.status(500).json({message: 'Error al cargar los pedidos completados.'});
     }
 });
+// GET /api/pedidos/completados/:id (NUEVA RUTA PARA DETALLES)
+app.get('/api/pedidos/completados/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const id_restaurante = req.session.restauranteId;
 
+        // 1. Obtener información básica del pedido
+        const [pedidoInfo] = await pool.query(
+            `SELECT * FROM pedidos 
+             WHERE id_pedido = ? AND id_restaurante = ? AND estado = 'completado'`,
+            [id, id_restaurante]
+        );
+
+        if (pedidoInfo.length === 0) {
+            return res.status(404).json({ message: 'Pedido no encontrado o no está completado.' });
+        }
+
+        // 2. Obtener los productos de ese pedido
+        const [productosDelPedido] = await pool.query(
+            `SELECT p.nombre, pd.cantidad, pd.precio_en_pedido 
+             FROM pedido_detalles pd
+             JOIN productos p ON pd.id_producto = p.id_producto
+             WHERE pd.id_pedido = ?`,
+            [id]
+        );
+
+        // 3. Calcular el total de ingredientes gastados para ESE pedido
+        const [ingredientesGastados] = await pool.query(
+            `SELECT 
+                i.nombre, 
+                i.unidad_medida, 
+                SUM(r.cantidad_usada * pd.cantidad) AS total_gastado
+             FROM pedido_detalles pd
+             JOIN recetas r ON pd.id_producto = r.id_producto
+             JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+             WHERE pd.id_pedido = ?
+             GROUP BY i.id_ingrediente, i.nombre, i.unidad_medida`,
+            [id]
+        );
+
+        res.json({
+            info: pedidoInfo[0],
+            productos: productosDelPedido,
+            ingredientes: ingredientesGastados
+        });
+
+    } catch (error) {
+        console.error('Error al obtener detalle del pedido completado:', error);
+        res.status(500).json({ message: 'Error al cargar los detalles del pedido.' });
+    }
+});
+// PUT /api/pedidos/archivar-completados (NUEVA RUTA)
+app.put('/api/pedidos/archivar-completados', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const id_restaurante = req.session.restauranteId;
+        
+        const [result] = await pool.query(
+            `UPDATE pedidos 
+             SET estado = 'inactivo' 
+             WHERE id_restaurante = ? AND estado = 'completado'`,
+            [id_restaurante]
+        );
+
+        res.json({ 
+            message: 'Pedidos archivados exitosamente.', 
+            pedidosArchivados: result.affectedRows 
+        });
+
+    } catch (error) {
+        console.error('Error al archivar pedidos:', error);
+        res.status(500).json({ message: 'Error interno al archivar los pedidos.' });
+    }
+});
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));

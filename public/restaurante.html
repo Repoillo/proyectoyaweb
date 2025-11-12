@@ -21,6 +21,8 @@
                     <li><a href="#" data-target="panelIngredientes" data-seccion="ingredientes"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
                     <li><a href="#" data-target="panelEmpleados" data-seccion="empleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
                     <li><a href="#" data-target="panelFinanzas" data-seccion="finanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
+                    <li><a href="#" data-target="panelPedidosCompletados" data-seccion="pedidos_completados"><ion-icon name="checkmark-done-outline"></ion-icon> Pedidos Completados</a></li>
+
                 </ul>
             </nav>
             <button class="boton botonSalir">Cerrar sesión</button>
@@ -37,9 +39,9 @@
             <div id="panelProductos" class="panelContenido oculto" data-seccion="productos">
                 <h1 class="seccion">Gestión de Productos</h1>
                 <div class="contenedorAcciones">
-                    <button class="boton botonAgregar">Agregar</button>
-                    <button class="boton botonEditar" disabled>Editar</button>
-                    <button class="boton botonEliminar" disabled>Eliminar</button>
+                    <button class="boton botonCrd">Agregar</button>
+                    <button class="boton botonCrd" disabled>Editar</button>
+                    <button class="boton botonCrd" disabled>Eliminar</button>
                 </div>
                 <table class="tablaDatos">
                     <thead>
@@ -94,11 +96,34 @@
             </div>
             
             <div id="panelFinanzas" class="panelContenido oculto" data-seccion="finanzas">
-                <h1 class="seccion">Finanzas</h1>
-            </div>
+                        <h1 class="seccion">Finanzas</h1>
+                    </div>
 
-        </main>
-    </div>
+                    <div id="panelPedidosCompletados" class="panelContenido oculto" data-seccion="pedidos_completados">
+                        <h1 class="seccion">Pedidos Completados</h1>
+                        <div class="contenedorAcciones">
+                            <button class="boton botonEliminar" id="btnArchivarTodos" title="Archivar todos los pedidos completados">
+                                <ion-icon name="trash-bin-outline"></ion-icon> Limpiar Completados
+                            </button>
+                        </div>
+                        <div id="listaPedidosCompletados" class="contenedor-pedidos">
+                            </div>
+
+                        <div id="detallePedidoCompletado" class_="detalle-pedido-contenedor oculto">
+                            <button class="boton botonCancelar" id="btnVolverALista">&larr; Volver a la lista</button>
+                            <h2 id="detallePedidoTitulo"></h2>
+                            <p id="detallePedidoTotal"></p>
+
+                            <h3>Productos Comprados</h3>
+                            <ul id="detalleProductosLista" class="lista-detalle"></ul>
+
+                            <h3>Ingredientes Gastados (Total)</h3>
+                            <ul id="detalleIngredientesLista" class="lista-detalle"></ul>
+                        </div>
+                    </div>
+
+                </main>
+            </div>
 
     <div id="modal" class="modal oculto">
         <div class="contenidoModal">

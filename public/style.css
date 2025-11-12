@@ -455,9 +455,8 @@ input {
 }
 
 /* Colores específicos para cada botón */
-.contenedorAcciones .botonAgregar { background-color: var(--primaryorange); }
-.contenedorAcciones .botonEditar { background-color: #3498db; } /* Azul */
-.contenedorAcciones .botonEliminar { background-color: #e74c3c; } /* Rojo */
+.contenedorAcciones .botonCrd { background-color: var(--primaryorange); }
+
 
 /* Estilo para los botones deshabilitados */
 .contenedorAcciones .boton:disabled {
@@ -543,4 +542,99 @@ input {
     background-color: #fef2e7 !important; /* Naranja claro */
     color: var(--primaryorange);
     font-weight: bold;
+}
+/* --- ESTILOS PARA PEDIDOS COMPLETADOS --- */
+
+.contenedor-pedidos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+}
+
+.pedido-item {
+    background-color: var(--containerbg);
+    border-radius: 50px; /* Forma ovalada/circular */
+    padding: 20px 30px;
+    min-width: 250px;
+    text-align: center;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid var(--lightgray);
+}
+
+.pedido-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+    background-color: #fdfdfd;
+}
+
+.pedido-item h3 {
+    margin: 0;
+    color: var(--primaryblue);
+    font-size: 1.1em;
+}
+
+.pedido-item p {
+    margin: 5px 0 0 0;
+    font-size: 1.4em;
+    font-weight: bold;
+    color: var(--primaryorange);
+}
+
+.detalle-pedido-contenedor {
+    background-color: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.detalle-pedido-contenedor #btnVolverALista {
+    margin-bottom: 20px;
+}
+
+.detalle-pedido-contenedor h2 {
+    margin-top: 0;
+    color: var(--primaryblue);
+}
+.detalle-pedido-contenedor h3 {
+    color: var(--darkgraytext);
+    border-bottom: 2px solid var(--lightgray);
+    padding-bottom: 5px;
+    margin-top: 25px;
+}
+
+.lista-detalle {
+    list-style: none;
+    padding-left: 0;
+}
+
+.lista-detalle li {
+    background-color: #f9f9f9;
+    padding: 10px 15px;
+    border-radius: 5px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 1.1em;
+}
+
+.lista-detalle li span {
+    font-weight: bold;
+    color: var(--darkgraytext);
+}
+
+/* Ocultar/Mostrar vistas de lista y detalle */
+.contenedor-pedidos.oculto,
+.detalle-pedido-contenedor.oculto {
+    display: none;
+}
+/* Ajuste para botones con íconos */
+.boton ion-icon {
+    vertical-align: middle;
+    margin-right: 5px;
+    font-size: 1.1em;
 }
