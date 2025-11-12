@@ -812,3 +812,191 @@ input {
 .toast.show {
     transform: translateX(-50%) translateY(0);
 }
+
+/* Aplicar todo esto en pantallas de 768px o menos (tablets y celulares) */
+
+@media (max-width: 768px) {
+
+    /* === 1. Arreglos para index.html (Login) === */
+    
+    /* Quitamos el centrado vertical y márgenes extraños del body en pantallas pequeñas */
+    body {
+        height: auto;
+        margin: 0;
+        padding: 20px 0; /* Un poco de espacio arriba y abajo */
+    }
+    
+    /* El contenedor de login/registro se ajusta al 100% */
+    .container {
+        width: 100%;
+        max-width: 100%;
+        min-height: 100vh; /* Ocupa toda la altura */
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    /* === 2. Arreglos para restaurante.html (Dueño) === */
+
+    /* Hacemos la barra lateral más pequeña (solo íconos) */
+    .panelLateral {
+        width: 65px; /* Ancho reducido */
+        padding: 15px 10px;
+    }
+
+    /* Ocultamos el texto del logo y menú */
+    .panelLateral .logo,
+    .panelLateral .menu li a {
+        font-size: 0; /* Oculta el texto */
+        justify-content: center;
+    }
+    
+    /* Nos aseguramos de que el ícono siga siendo visible */
+    .panelLateral .menu li a ion-icon {
+        font-size: 1.6em; /* Aumenta el ícono */
+        margin: 0;
+    }
+
+    /* El logo 'Mi Restaurante' se vuelve solo 'MR' (o se oculta) */
+    .panelLateral .logo::before {
+        content: 'MR'; /* O un ícono si prefieres */
+        font-size: 24px;
+        text-align: center;
+    }
+
+    /* El contenido principal se ajusta */
+    .contenidoPrincipal {
+        padding: 15px; /* Menos padding en celular */
+    }
+
+    /* --- El "Truco" para Tablas Responsivas --- */
+    /* Convertimos las tablas en "tarjetas" */
+    
+    .tablaDatos {
+        border: none;
+        box-shadow: none;
+    }
+    
+    /* 1. Ocultamos los encabezados de la tabla */
+    .tablaDatos thead {
+        display: none;
+    }
+
+    .tablaDatos tr,
+    .tablaDatos td {
+        display: block; /* Hacemos que cada celda ocupe una línea */
+        width: 100%;
+    }
+    
+    .tablaDatos tr {
+        background-color: #fff;
+        margin-bottom: 15px;
+        border: 1px solid var(--lightgray);
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+
+    .tablaDatos td {
+        text-align: right; /* Alineamos el valor a la derecha */
+        padding-left: 50%; /* Dejamos espacio para la etiqueta */
+        position: relative;
+        border-bottom: 1px solid var(--lightgray);
+    }
+    
+    .tablaDatos td:last-child {
+        border-bottom: none;
+    }
+
+    /* 2. Creamos las etiquetas usando CSS */
+    .tablaDatos td::before {
+        content: 'Etiqueta:'; /* Placeholder */
+        position: absolute;
+        left: 15px;
+        width: 45%;
+        padding-right: 10px;
+        text-align: left;
+        font-weight: bold;
+        color: var(--primaryblue);
+    }
+
+    /* Etiquetas específicas para cada tabla */
+    /* Productos */
+    #panelProductos .tablaDatos td:nth-of-type(1)::before { content: 'Nombre:'; }
+    #panelProductos .tablaDatos td:nth-of-type(2)::before { content: 'Tipo:'; }
+    #panelProductos .tablaDatos td:nth-of-type(3)::before { content: 'Descripción:'; }
+    #panelProductos .tablaDatos td:nth-of-type(4)::before { content: 'Precio:'; }
+    /* Ingredientes */
+    #panelIngredientes .tablaDatos td:nth-of-type(1)::before { content: 'Nombre:'; }
+    #panelIngredientes .tablaDatos td:nth-of-type(2)::before { content: 'Unidad:'; }
+    #panelIngredientes .tablaDatos td:nth-of-type(3)::before { content: 'Costo:'; }
+    #panelIngredientes .tablaDatos td:nth-of-type(4)::before { content: 'Cantidad:'; }
+    /* Empleados */
+    #panelEmpleados .tablaDatos td:nth-of-type(1)::before { content: 'Nombre:'; }
+    #panelEmpleados .tablaDatos td:nth-of-type(2)::before { content: 'Rol:'; }
+    #panelEmpleados .tablaDatos td:nth-of-type(3)::before { content: 'Sueldo:'; }
+
+
+    /* === 3. Arreglos para cocina.html (Cocinero) === */
+    
+    .headerCocina {
+        padding: 10px 15px;
+    }
+    .headerCocina h1 {
+        font-size: 1.3em;
+    }
+    .headerCocina .botonSalir {
+        padding: 8px 12px;
+        font-size: 10px;
+    }
+
+    .contenedorCocina {
+        padding: 10px;
+        height: calc(100vh - 65px); /* Ajustar a nuevo header */
+    }
+
+    /* Ocultamos la "tabla" header, ocupa mucho espacio */
+    .tablaComandasHeader {
+        display: none;
+    }
+
+    /* Convertimos la lista de 4 columnas en un grid de 2x2 */
+    .comanda-item {
+        grid-template-columns: 1fr auto; /* Columna de info, Columna de estado/acciones */
+        grid-template-rows: auto auto; /* Dos filas */
+        gap: 10px 15px;
+        padding: 15px;
+    }
+    
+    /* Reordenamos los 4 elementos en el grid 2x2 */
+    .comanda-item .comanda-info:nth-of-type(1) {
+        /* (Mesa) */
+        grid-column: 1 / 2;
+        grid-row: 1 / 2;
+    }
+    .comanda-item .comanda-estado {
+        /* (Estado) */
+        grid-column: 2 / 3;
+        grid-row: 1 / 2;
+        text-align: right; /* Alinear estado a la derecha */
+    }
+    .comanda-item .comanda-info:nth-of-type(2) {
+        /* (Tiempo) */
+        grid-column: 1 / 2;
+        grid-row: 2 / 3;
+    }
+    .comanda-item .comanda-acciones {
+        /* (Acciones) */
+        grid-column: 2 / 3;
+        grid-row: 2 / 3;
+    }
+
+    /* Arreglos para el modal */
+    .modal.oculto .contenidoModal {
+        transform: translateY(0); /* Simplificamos animación */
+    }
+    .contenidoModal {
+        width: 95%; /* Modal casi llena la pantalla */
+        padding: 20px;
+    }
+
+}
