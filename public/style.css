@@ -813,130 +813,105 @@ input {
     transform: translateX(-50%) translateY(0);
 }
 
+/* --- INICIO DE REGLAS RESPONSIVAS --- */
 /* Aplicar todo esto en pantallas de 768px o menos (tablets y celulares) */
 
 @media (max-width: 768px) {
 
     /* === 1. Arreglos para index.html (Login) === */
     
-    /* Quitamos el centrado vertical y márgenes extraños del body en pantallas pequeñas */
+    /* Quitamos el centrado vertical y márgenes extraños del body */
     body {
         height: auto;
+        min-height: 100vh;
         margin: 0;
         padding: 20px 0; /* Un poco de espacio arriba y abajo */
     }
     
-    /* El contenedor de login/registro se ajusta al 100% */
+    /* Hacemos que el contenedor sea una 'tarjeta' (no 100% de ancho) */
     .container {
-        width: 100%;
-        max-width: 100%;
-        min-height: 100vh; /* Ocupa toda la altura */
-        border-radius: 0;
-        box-shadow: none;
+        width: 90%;
+        max-width: 450px; /* Un ancho máximo razonable */
+        min-height: auto;
+        border-radius: 10px;
+        box-shadow: 0 14px 28px rgba(0,0,0,0.25), 0 10px 10px rgba(0,0,0,0.22);
     }
 
-    /* === 2. Arreglos para restaurante.html (Dueño) === */
-
-    /* Hacemos la barra lateral más pequeña (solo íconos) */
-    .panelLateral {
-        width: 65px; /* Ancho reducido */
-        padding: 15px 10px;
-    }
-
-    /* Ocultamos el texto del logo y menú */
-    .panelLateral .logo,
-    .panelLateral .menu li a {
-        font-size: 0; /* Oculta el texto */
-        justify-content: center;
-    }
-    
-    /* Nos aseguramos de que el ícono siga siendo visible */
-    .panelLateral .menu li a ion-icon {
-        font-size: 1.6em; /* Aumenta el ícono */
-        margin: 0;
-    }
-
-    /* El logo 'Mi Restaurante' se vuelve solo 'MR' (o se oculta) */
-    .panelLateral .logo::before {
-        content: 'MR'; /* O un ícono si prefieres */
-        font-size: 24px;
-        text-align: center;
-    }
-
-    /* El contenido principal se ajusta */
-    .contenidoPrincipal {
-        padding: 15px; /* Menos padding en celular */
-    }
-
-    /* --- El "Truco" para Tablas Responsivas --- */
-    /* Convertimos las tablas en "tarjetas" */
-    
-    .tablaDatos {
-        border: none;
-        box-shadow: none;
-    }
-    
-    /* 1. Ocultamos los encabezados de la tabla */
-    .tablaDatos thead {
+    /* --- Arreglo para la animación de login en celular --- */
+    /* En celular, el panel de overlay se oculta */
+    .overlaycontainer {
         display: none;
     }
 
-    .tablaDatos tr,
-    .tablaDatos td {
-        display: block; /* Hacemos que cada celda ocupe una línea */
+    /* Hacemos que los 2 formularios (login y registro) ocupen el 100% */
+    .formcontainer {
+        position: relative; /* Lo sacamos de 'absolute' */
         width: 100%;
+        height: auto;
+    }
+    .signin {
+        z-index: 2;
+        padding: 40px 0;
+    }
+    .signup {
+        opacity: 1; /* Hacemos visible el de registro */
+        z-index: 1;
+        padding: 40px 0;
     }
     
-    .tablaDatos tr {
-        background-color: #fff;
-        margin-bottom: 15px;
-        border: 1px solid var(--lightgray);
-        border-radius: 8px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-        overflow: hidden;
-    }
+    /* PERO, no podemos cambiar de uno a otro. El JS usa los botones del overlay. */
+    /* ¡NECESITAMOS CAMBIAR EL JS! ... O... */
 
-    .tablaDatos td {
-        text-align: right; /* Alineamos el valor a la derecha */
-        padding-left: 50%; /* Dejamos espacio para la etiqueta */
-        position: relative;
-        border-bottom: 1px solid var(--lightgray);
-    }
+    /* --- RECTIFICACIÓN: La animación es muy compleja para CSS --- */
+    /* Dejemos la animación, pero ajustemos el layout */
     
-    .tablaDatos td:last-child {
-        border-bottom: none;
+    /* .container {
+        width: 100%;
+        max-width: 100%;
+        min-height: 100vh;
+        border-radius: 0;
+        box-shadow: none;
+    } */
+    /* Lo anterior (comentado) es lo que no te gustó. */
+
+    /* --- Propuesta 2: Simplificar la animación --- */
+    /* En celular, el overlay se vuelve vertical y ocupa la mitad superior */
+    .overlaycontainer {
+        left: 0;
+        width: 100%;
+        height: 40%; /* El overlay ocupa el 40% superior */
+        border-radius: 0;
+    }
+    .overlaypanel {
+        padding: 0 20px; /* Menos padding */
     }
 
-    /* 2. Creamos las etiquetas usando CSS */
-    .tablaDatos td::before {
-        content: 'Etiqueta:'; /* Placeholder */
-        position: absolute;
-        left: 15px;
-        width: 45%;
-        padding-right: 10px;
-        text-align: left;
-        font-weight: bold;
-        color: var(--primaryblue);
+    /* Los formularios se mueven verticalmente, no horizontalmente */
+    .formcontainer {
+        width: 100%;
+        height: 60%; /* Ocupa el 60% inferior */
+        top: 40%; /* Se posiciona debajo del overlay */
     }
+    .signin { left: 0; }
+    .signup { left: 0; }
 
-    /* Etiquetas específicas para cada tabla */
-    /* Productos */
-    #panelProductos .tablaDatos td:nth-of-type(1)::before { content: 'Nombre:'; }
-    #panelProductos .tablaDatos td:nth-of-type(2)::before { content: 'Tipo:'; }
-    #panelProductos .tablaDatos td:nth-of-type(3)::before { content: 'Descripción:'; }
-    #panelProductos .tablaDatos td:nth-of-type(4)::before { content: 'Precio:'; }
-    /* Ingredientes */
-    #panelIngredientes .tablaDatos td:nth-of-type(1)::before { content: 'Nombre:'; }
-    #panelIngredientes .tablaDatos td:nth-of-type(2)::before { content: 'Unidad:'; }
-    #panelIngredientes .tablaDatos td:nth-of-type(3)::before { content: 'Costo:'; }
-    #panelIngredientes .tablaDatos td:nth-of-type(4)::before { content: 'Cantidad:'; }
-    /* Empleados */
-    #panelEmpleados .tablaDatos td:nth-of-type(1)::before { content: 'Nombre:'; }
-    #panelEmpleados .tablaDatos td:nth-of-type(2)::before { content: 'Rol:'; }
-    #panelEmpleados .tablaDatos td:nth-of-type(3)::before { content: 'Sueldo:'; }
+    /* Lógica de JS */
+    .container.rightpanelactive .signin {
+        transform: translateY(100%); /* Se oculta hacia abajo */
+    }
+    .container.rightpanelactive .signup {
+        transform: translateY(0); /* Sube para mostrarse */
+        opacity: 1;
+        z-index: 5;
+    }
+    .container.rightpanelactive .overlaycontainer {
+        transform: translateY(-100%); /* Se oculta hacia arriba */
+    }
+    /* (Fin del rediseño de animación de login) */
+    
 
-
-    /* === 3. Arreglos para cocina.html (Cocinero) === */
+    /* === 2. Arreglos para cocina.html (Cocinero) === */
+    /* (Estos se quedan, funcionaron bien) */
     
     .headerCocina {
         padding: 10px 15px;
@@ -954,45 +929,40 @@ input {
         height: calc(100vh - 65px); /* Ajustar a nuevo header */
     }
 
-    /* Ocultamos la "tabla" header, ocupa mucho espacio */
+    /* Ocultamos la "tabla" header */
     .tablaComandasHeader {
         display: none;
     }
 
     /* Convertimos la lista de 4 columnas en un grid de 2x2 */
     .comanda-item {
-        grid-template-columns: 1fr auto; /* Columna de info, Columna de estado/acciones */
-        grid-template-rows: auto auto; /* Dos filas */
+        grid-template-columns: 1fr auto; 
+        grid-template-rows: auto auto; 
         gap: 10px 15px;
         padding: 15px;
     }
     
-    /* Reordenamos los 4 elementos en el grid 2x2 */
     .comanda-item .comanda-info:nth-of-type(1) {
-        /* (Mesa) */
         grid-column: 1 / 2;
         grid-row: 1 / 2;
     }
     .comanda-item .comanda-estado {
-        /* (Estado) */
         grid-column: 2 / 3;
         grid-row: 1 / 2;
-        text-align: right; /* Alinear estado a la derecha */
+        text-align: right;
     }
     .comanda-item .comanda-info:nth-of-type(2) {
-        /* (Tiempo) */
         grid-column: 1 / 2;
         grid-row: 2 / 3;
     }
     .comanda-item .comanda-acciones {
-        /* (Acciones) */
         grid-column: 2 / 3;
         grid-row: 2 / 3;
     }
 
     /* Arreglos para el modal */
     .modal.oculto .contenidoModal {
-        transform: translateY(0); /* Simplificamos animación */
+        transform: translateY(0);
     }
     .contenidoModal {
         width: 95%; /* Modal casi llena la pantalla */
@@ -1000,3 +970,4 @@ input {
     }
 
 }
+/* --- FIN DE REGLAS RESPONSIVAS --- */
