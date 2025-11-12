@@ -67,23 +67,26 @@ function requireOwner(req, res, next) {
 
 // === Rutas de Autenticación ===
 app.post('/api/auth/register', async (req, res) => {
-    const { nombre_usuario, nombre_restaurante, correo_usuario, contra } = req.body;
+    const { nombre_usuario, correo_usuario, contra } = req.body;
+    
+    const id_restaurante_principal = 1; 
+
     try {
         const contra_hash = await bcrypt.hash(contra, 10);
-        const [restaurantResult] = await pool.query('INSERT INTO restaurante (nombre_restaurante) VALUES (?)', [nombre_restaurante]);
-        const id_restaurante = restaurantResult.insertId;
-        await pool.query('INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, id_restaurante) VALUES (?, ?, ?, ?)',
-            [nombre_usuario, correo_usuario, contra_hash, id_restaurante]);
-        res.status(201).json({ message: "Usuario registrado exitosamente." });
+        
+        await pool.query(
+            `INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, id_restaurante, rol) 
+             VALUES (?, ?, ?, ?, 'cocinero')`,
+            [nombre_usuario, correo_usuario, contra_hash, id_restaurante_principal]
+        );
+        
+        res.status(201).json({ message: "Cocinero registrado exitosamente." });
+
     } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') {
-             if (error.message.includes('correo_usuario')) {
-                 return res.status(409).json({ message: 'El correo electrónico ya está en uso.' });
-             } else if (error.message.includes('nombre_restaurante')) {
-                 return res.status(409).json({ message: 'El nombre del restaurante ya existe.' });
-             }
+        if (error.code === 'ER_DUP_ENTRY' && error.message.includes('correo_usuario')) {
+             return res.status(409).json({ message: 'El correo electrónico ya está en uso.' });
         }
-        console.error('Error al registrar:', error);
+        console.error('Error al registrar cocinero:', error);
         res.status(500).json({ message: 'Error interno del servidor al registrar.' });
     }
 });
@@ -632,6 +635,63 @@ app.put('/api/pedidos/archivar-completados', requireAuth, requireOwner, async (r
     } catch (error) {
         console.error('Error al archivar pedidos:', error);
         res.status(500).json({ message: 'Error interno al archivar los pedidos.' });
+    }
+});
+// [NUEVA RUTA] GET Pedidos para la Cocina (sin ver / en proceso)
+app.get('/api/pedidos/cocina/activos', requireAuth, async (req, res) => {
+    // No necesita requireOwner, el cocinero puede ver esto
+    try {
+        const [pedidosActivos] = await pool.query(
+            `SELECT id_pedido, mesa, estado, fecha_creacion 
+             FROM pedidos 
+             WHERE id_restaurante = ? AND (estado = 'sin ver' OR estado = 'en proceso')
+             ORDER BY fecha_creacion ASC`,
+            [req.session.restauranteId]
+        );
+        res.json(pedidosActivos);
+    } catch(error) {
+        console.error('Error al obtener pedidos activos para cocina:', error);
+        res.status(500).json({message: 'Error al cargar los pedidos.'});
+    }
+});
+
+// [NUEVA RUTA] GET Receta/Detalles para el Modal de Cocina
+app.get('/api/pedidos/cocina/detalles/:id_pedido', requireAuth, async (req, res) => {
+    try {
+        const { id_pedido } = req.params;
+
+        // 1. Obtenemos los productos del pedido
+        const [productos] = await pool.query(
+            `SELECT p.id_producto, p.nombre, pd.cantidad 
+             FROM pedido_detalles pd
+             JOIN productos p ON pd.id_producto = p.id_producto
+             WHERE pd.id_pedido = ?`,
+            [id_pedido]
+        );
+
+        // 2. Por cada producto, obtenemos su receta
+        const productosConReceta = [];
+        for (const prod of productos) {
+            const [receta] = await pool.query(
+                `SELECT i.nombre, r.cantidad_usada, i.unidad_medida
+                 FROM recetas r
+                 JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+                 WHERE r.id_producto = ?`,
+                [prod.id_producto]
+            );
+            
+            productosConReceta.push({
+                nombre_producto: prod.nombre,
+                cantidad_a_preparar: prod.cantidad,
+                receta: receta // Array de ingredientes
+            });
+        }
+        
+        res.json(productosConReceta);
+
+    } catch(error) {
+        console.error('Error al obtener detalles de receta para cocina:', error);
+        res.status(500).json({message: 'Error al cargar los detalles.'});
     }
 });
 

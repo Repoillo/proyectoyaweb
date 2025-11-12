@@ -35,10 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const correo = document.getElementById('registeremail').value;
         const contrasena = document.getElementById('registerpassword').value;
         
-        // El nombre del restaurante lo pediremos después o lo asignaremos por defecto
+        // El 'nombre_restaurante' ya no es necesario
         const datos = {
             nombre_usuario: nombre,
-            nombre_restaurante: `${nombre}'s Restaurant`, // Placeholder
             correo_usuario: correo,
             contra: contrasena
         };
@@ -53,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) {
                 throw new Error(data.message || 'Error en el registro.');
             }
-            alert('¡Registro exitoso! Ahora puedes iniciar sesión.');
+            alert('¡Cuenta de cocinero creada! Ahora puedes iniciar sesión.');
             formcuenta.reset();
             // Cambiamos al panel de inicio de sesión
             container.classList.remove("rightpanelactive"); 
@@ -62,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Formulario de Inicio de Sesión (Actualizado) ---
+    // --- Formulario de Inicio de Sesión (Actualizado con Redirección por Rol) ---
     formsesion.addEventListener('submit', async (e) => {
         e.preventDefault();
         loginerror.textContent = '';
@@ -75,14 +74,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(datos),
-                credentials: 'include' // Importante para enviar/recibir cookies
+                credentials: 'include' 
             });
-            const data = await res.json();
+
+            const data = await res.json(); // data = { message: '...', rol: '...' }
+            
             if (!res.ok) {
                 throw new Error(data.message || 'Credenciales incorrectas.');
             }
-            // SI EL LOGIN ES EXITOSO, REDIRIGE AL DASHBOARD
-            window.location.href = '/restaurante.html';
+
+            // --- ¡AQUÍ ESTÁ LA LÓGICA! ---
+            if (data.rol === 'dueño') {
+                window.location.href = '/restaurante.html';
+            } else if (data.rol === 'cocinero') {
+                window.location.href = '/cocina.html';
+            } else {
+                // Por si acaso
+                loginerror.textContent = 'Rol no reconocido.';
+            }
 
         } catch (error) {
             loginerror.textContent = error.message;
