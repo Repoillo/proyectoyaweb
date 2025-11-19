@@ -9,12 +9,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const botonCerrarModal = modalReceta.querySelector('.botonCancelar');
     const toast = document.getElementById('toast');
 
-    // --- VERIFICACIÓN DE SESIÓN (INVERSA A restaurante.js) ---
     async function verificarAccesoCocina() {
         try {
             const respuesta = await fetch('/api/auth/status', { credentials: 'include' });
             if (!respuesta.ok) {
-                 console.log('No hay sesión activa, redirigiendo al login...');
                  window.location.href = '/index.html';
                  return;
             }
@@ -22,8 +20,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await respuesta.json();
             
             if (data.rol === 'dueño') {
-                console.log('Rol de dueño detectado. Redirigiendo al dashboard...');
                 window.location.href = '/restaurante.html';
+                return;
+            }
+            // Corrección clave: Si es mesero, redirigir a su vista
+            if (data.rol === 'mesero') {
+                window.location.href = '/mesero.html';
                 return;
             }
             
@@ -228,5 +230,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- RECARGA AUTOMÁTICA ---
     setInterval(cargarPedidosActivos, 30000);
-
+    verificarAccesoCocina();
 });

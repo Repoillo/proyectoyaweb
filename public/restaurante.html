@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Mi Restaurante</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Iconos -->
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+    <!-- Librería para generar QR fácilmente -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 </head>
 <body class="paginaRestaurante">
 
@@ -17,12 +20,12 @@
             <nav class="menu">
                 <ul>
                     <li><a href="#" data-target="panelProductos" data-seccion="productos"><ion-icon name="fast-food-outline"></ion-icon> Productos</a></li>
-                    
                     <li><a href="#" data-target="panelIngredientes" data-seccion="ingredientes"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
+                    <!-- NUEVA SECCIÓN DE MESAS -->
+                    <li><a href="#" data-target="panelMesas" data-seccion="mesas"><ion-icon name="grid-outline"></ion-icon> Mesas</a></li>
                     <li><a href="#" data-target="panelEmpleados" data-seccion="empleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
                     <li><a href="#" data-target="panelFinanzas" data-seccion="finanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
-                    <li><a href="#" data-target="panelPedidosCompletados" data-seccion="pedidos_completados"><ion-icon name="checkmark-done-outline"></ion-icon> Pedidos Completados</a></li>
-
+                    <li><a href="#" data-target="panelPedidosCompletados" data-seccion="pedidos_completados"><ion-icon name="checkmark-done-outline"></ion-icon> Historial</a></li>
                 </ul>
             </nav>
             <button class="boton botonSalir">Cerrar sesión</button>
@@ -36,6 +39,7 @@
                 <p>Selecciona una categoría del panel para comenzar.</p>
             </div>
 
+            <!-- PANEL PRODUCTOS -->
             <div id="panelProductos" class="panelContenido oculto" data-seccion="productos">
                 <h1 class="seccion">Gestión de Productos</h1>
                 <div class="contenedorAcciones">
@@ -56,6 +60,7 @@
                 </table>
             </div>
 
+            <!-- PANEL INGREDIENTES -->
             <div id="panelIngredientes" class="panelContenido oculto" data-seccion="ingredientes">
                 <h1 class="seccion">Gestión de Ingredientes</h1>
                 <div class="contenedorAcciones">
@@ -76,6 +81,28 @@
                 </table>
             </div>
 
+            <!-- NUEVO PANEL MESAS (DUEÑO) -->
+            <div id="panelMesas" class="panelContenido oculto" data-seccion="mesas">
+                <h1 class="seccion">Configuración de Mesas</h1>
+                <p style="text-align: center; color: #666; margin-bottom: 20px;">Aquí defines cuántas mesas físicas existen en tu local.</p>
+                
+                <div class="contenedorAcciones">
+                    <button class="boton botonAgregar">Nueva Mesa</button>
+                    <button class="boton botonEliminar" disabled>Eliminar Mesa</button>
+                </div>
+                <table class="tablaDatos">
+                    <thead>
+                        <tr>
+                            <th>Número / Nombre</th>
+                            <th>Estado Actual</th>
+                            <th>Código Sesión</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <!-- PANEL EMPLEADOS -->
             <div id="panelEmpleados" class="panelContenido oculto" data-seccion="empleados">
                 <h1 class="seccion">Gestión de Empleados</h1>
                 <div class="contenedorAcciones">
@@ -95,36 +122,45 @@
                 </table>
             </div>
             
+            <!-- PANEL FINANZAS -->
             <div id="panelFinanzas" class="panelContenido oculto" data-seccion="finanzas">
-                        <h1 class="seccion">Finanzas</h1>
-                    </div>
-
-                    <div id="panelPedidosCompletados" class="panelContenido oculto" data-seccion="pedidos_completados">
-                        <h1 class="seccion">Pedidos Completados</h1>
-                        <div class="contenedorAcciones">
-                            <button class="boton botonEliminar" id="btnArchivarTodos" title="Archivar todos los pedidos completados">
-                                <ion-icon name="trash-bin-outline"></ion-icon> Limpiar Completados
-                            </button>
-                        </div>
-                        <div id="listaPedidosCompletados" class="contenedor-pedidos">
-                            </div>
-
-                        <div id="detallePedidoCompletado" class_="detalle-pedido-contenedor oculto">
-                            <button class="boton botonCancelar" id="btnVolverALista">&larr; Volver a la lista</button>
-                            <h2 id="detallePedidoTitulo"></h2>
-                            <p id="detallePedidoTotal"></p>
-
-                            <h3>Productos Comprados</h3>
-                            <ul id="detalleProductosLista" class="lista-detalle"></ul>
-
-                            <h3>Ingredientes Gastados (Total)</h3>
-                            <ul id="detalleIngredientesLista" class="lista-detalle"></ul>
-                        </div>
-                    </div>
-
-                </main>
+                <h1 class="seccion">Finanzas</h1>
+                <!-- Aquí iría el contenido financiero -->
             </div>
 
+            <!-- PANEL HISTORIAL -->
+            <div id="panelPedidosCompletados" class="panelContenido oculto" data-seccion="pedidos_completados">
+                <h1 class="seccion">Pedidos Completados</h1>
+                <div class="contenedorAcciones">
+                    <button class="boton botonEliminar" id="btnArchivarTodos" title="Archivar todos los pedidos completados">
+                        <ion-icon name="trash-bin-outline"></ion-icon> Limpiar Completados
+                    </button>
+                </div>
+                <div id="listaPedidosCompletados" class="contenedor-pedidos"></div>
+
+                <div id="detallePedidoCompletado" class="detalle-pedido-contenedor oculto">
+                    <button class="boton botonCancelar" id="btnVolverALista">&larr; Volver a la lista</button>
+                    <h2 id="detallePedidoTitulo"></h2>
+                    <p id="detallePedidoTotal"></p>
+                    <h3>Productos Comprados</h3>
+                    <ul id="detalleProductosLista" class="lista-detalle"></ul>
+                    <h3>Ingredientes Gastados (Total)</h3>
+                    <ul id="detalleIngredientesLista" class="lista-detalle"></ul>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- BOTÓN FLOTANTE QR -->
+    <button id="btnExportarQR" title="Descargar QR del Restaurante">
+        <ion-icon name="qr-code-outline"></ion-icon>
+    </button>
+    <!-- Canvas oculto para generar el QR -->
+    <canvas id="qrCanvas" style="display:none;"></canvas>
+
+
+    <!-- MODAL GENERAL -->
     <div id="modal" class="modal oculto">
         <div class="contenidoModal">
             <h2 id="tituloModal"></h2>

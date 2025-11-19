@@ -7,26 +7,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginerror = document.getElementById('loginerror');
     const registererror = document.getElementById('registererror');
 
-    // --- VERIFICAR SESIÓN AL CARGAR ---
+    // --- 1. VERIFICAR SESIÓN INTELIGENTE AL CARGAR ---
     async function verificarSesion() {
         try {
-            const respuesta = await fetch('/api/auth/status', {credentials: 'include'}); // Include credentials for cookies
+            const respuesta = await fetch('/api/auth/status', {credentials: 'include'});
             if (respuesta.ok) {
-                // Si la sesión es válida, redirige al dashboard
-                window.location.href = '/restaurante.html';
+                const data = await respuesta.json();
+                // Redirección basada en el rol, no genérica
+                if (data.rol === 'dueño') window.location.href = '/restaurante.html';
+                else if (data.rol === 'cocinero') window.location.href = '/cocina.html';
+                else if (data.rol === 'mesero') window.location.href = '/mesero.html';
             }
-            // Si no está ok (401), no hace nada y muestra el login
         } catch (error) {
             console.error('Error verificando sesión:', error);
-            // Podrías mostrar un mensaje si falla la conexión con el servidor
         }
     }
-    verificarSesion(); // Llama a la función al cargar la página
+    verificarSesion(); 
 
-    // --- Lógica de Animación --- (sin cambios)
+    // --- Lógica de Animación --- 
     signUpButton.addEventListener('click', () => container.classList.add("rightpanelactive"));
     signInButton.addEventListener('click', () => container.classList.remove("rightpanelactive"));
 
+    // --- Registro ---
     formcuenta.addEventListener('submit', async (e) => {
         e.preventDefault();
         registererror.textContent = '';
@@ -34,9 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const nombre = document.getElementById('registername').value;
         const correo = document.getElementById('registeremail').value;
         const contrasena = document.getElementById('registerpassword').value;
-        const rol = document.getElementById('registerrol').value; // Nuevo campo
+        const rol = document.getElementById('registerrol').value;
         
-        // El 'nombre_restaurante' ya no es necesario
         const datos = {
             nombre_usuario: nombre,
             correo_usuario: correo,
@@ -54,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) {
                 throw new Error(data.message || 'Error en el registro.');
             }
-            alert('¡Cuenta de empleado creada! Ahora puedes iniciar sesión.');
+            alert('¡Cuenta creada! Ahora puedes iniciar sesión.');
             formcuenta.reset();
             container.classList.remove("rightpanelactive"); 
         } catch (error) {
@@ -62,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Formulario de Inicio de Sesión (Actualizado con Redirección por Rol) ---
+    // --- Inicio de Sesión ---
     formsesion.addEventListener('submit', async (e) => {
         e.preventDefault();
         loginerror.textContent = '';
@@ -78,18 +79,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 credentials: 'include' 
             });
 
-            const data = await res.json(); // data = { message: '...', rol: '...' }
+            const data = await res.json();
             
             if (!res.ok) {
                 throw new Error(data.message || 'Credenciales incorrectas.');
             }
 
+            // Redirección explícita tras login exitoso
             if (data.rol === 'dueño') {
                 window.location.href = '/restaurante.html';
             } else if (data.rol === 'cocinero') {
                 window.location.href = '/cocina.html';
             } else if (data.rol === 'mesero') {
-                window.location.href = '/mesero.html'; // Nueva página
+                window.location.href = '/mesero.html';
             } 
 
         } catch (error) {

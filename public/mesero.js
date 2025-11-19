@@ -2,14 +2,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const listaMesas = document.getElementById('listaMesas');
     const botonSalir = document.querySelector('.botonSalir');
 
-    // --- Verificar Sesión ---
+    // --- Verificar Sesión (Blindaje) ---
     async function verificarAcceso() {
         try {
-            const res = await fetch('/api/auth/status');
+            const res = await fetch('/api/auth/status', { credentials: 'include' });
             if (!res.ok) return window.location.href = '/index.html';
+            
             const data = await res.json();
-            // Permitimos dueño y mesero
-            if (data.rol === 'cocinero') window.location.href = '/cocina.html';
+            
+            if (data.rol === 'cocinero') {
+                window.location.href = '/cocina.html';
+                return;
+            }
+            if (data.rol === 'dueño') {
+                // El dueño si quiere puede ver esto, pero idealmente tiene su dashboard
+                window.location.href = '/restaurante.html'; 
+                return;
+            }
+            // Si es mesero, continuamos
         } catch (e) { window.location.href = '/index.html'; }
     }
     verificarAcceso();
@@ -18,19 +28,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Cargar Mesas ---
     async function cargarMesas() {
         try {
-            const res = await fetch('/api/mesas');
+            const res = await fetch('/api/mesas', { credentials: 'include' });
             const mesas = await res.json();
             renderizarMesas(mesas);
         } catch (error) {
             console.error(error);
-            listaMesas.innerHTML = '<p>Error al cargar mesas.</p>';
+            listaMesas.innerHTML = '<p>Error al cargar mesas. Revisa tu conexión.</p>';
         }
     }
 
     function renderizarMesas(mesas) {
         listaMesas.innerHTML = '';
         if (mesas.length === 0) {
-            listaMesas.innerHTML = '<p>No hay mesas configuradas en el sistema.</p>';
+            listaMesas.innerHTML = '<p>No hay mesas configuradas. Pide al dueño que agregue mesas en el panel.</p>';
             return;
         }
 
@@ -40,30 +50,35 @@ document.addEventListener('DOMContentLoaded', () => {
             card.classList.add('pedido-item'); // Reusamos estilo de tarjeta
             
             // Estilo condicional: Verde (libre) o Rojo (ocupada)
-            card.style.borderLeft = esOcupada ? '5px solid #e74c3c' : '5px solid #2ecc71';
+            card.style.borderLeft = esOcupada ? '8px solid #e74c3c' : '8px solid #2ecc71';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.justifyContent = 'space-between';
             
             let contenidoHTML = `
-                <h3>${mesa.numero_mesa}</h3>
-                <p style="color: ${esOcupada ? '#e74c3c' : '#2ecc71'}; font-size: 1em; margin-bottom: 15px;">
+                <h3 style="font-size: 1.5em; margin-bottom: 5px;">${mesa.numero_mesa}</h3>
+                <p style="color: ${esOcupada ? '#e74c3c' : '#2ecc71'}; font-weight: bold; font-size: 1.1em;">
                     ${esOcupada ? 'OCUPADA' : 'LIBRE'}
                 </p>
             `;
 
             if (esOcupada) {
                 contenidoHTML += `
-                    <div style="font-size: 2em; font-weight: bold; margin: 10px 0;">
-                        ${mesa.codigo_sesion}
+                    <div style="background: #f9f9f9; padding: 10px; border-radius: 5px; margin: 15px 0;">
+                        <span style="display:block; font-size: 0.8em; color: #666;">Código Sesión:</span>
+                        <span style="font-size: 2em; font-weight: bold; color: #333; letter-spacing: 2px;">${mesa.codigo_sesion}</span>
                     </div>
-                    <small>Código de Sesión</small>
-                    <button class="boton botonEliminar btnLiberar" data-id="${mesa.id_mesa}" style="margin-top: 15px; width: 100%;">
-                        Liberar Mesa
+                    <button class="boton botonEliminar btnLiberar" data-id="${mesa.id_mesa}" style="width: 100%; padding: 15px;">
+                        <ion-icon name="lock-open-outline"></ion-icon> Liberar Mesa
                     </button>
                 `;
             } else {
                 contenidoHTML += `
-                    <div style="font-size: 2em; color: #ccc; margin: 10px 0;">--</div>
-                    <button class="boton botonAgregar btnOcupar" data-id="${mesa.id_mesa}" style="margin-top: 15px; width: 100%;">
-                        Ocupar Mesa
+                    <div style="margin: 15px 0; color: #ccc; font-style: italic;">
+                        Sin código activo
+                    </div>
+                    <button class="boton botonAgregar btnOcupar" data-id="${mesa.id_mesa}" style="width: 100%; padding: 15px;">
+                        <ion-icon name="key-outline"></ion-icon> Ocupar Mesa
                     </button>
                 `;
             }
@@ -75,31 +90,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Eventos ---
     listaMesas.addEventListener('click', async (e) => {
-        if (e.target.classList.contains('btnOcupar')) {
-            const id = e.target.dataset.id;
-            if(!confirm('¿Generar código para esta mesa?')) return;
+        // Usamos closest para asegurar que detecte el clic aunque le den al icono
+        const btnOcupar = e.target.closest('.btnOcupar');
+        const btnLiberar = e.target.closest('.btnLiberar');
+
+        if (btnOcupar) {
+            const id = btnOcupar.dataset.id;
+            if(!confirm('¿Generar código y ocupar esta mesa?')) return;
             await accionMesa(id, 'ocupar');
         }
-        if (e.target.classList.contains('btnLiberar')) {
-            const id = e.target.dataset.id;
-            if(!confirm('¿Liberar mesa? Esto cerrará la sesión de la app.')) return;
+        
+        if (btnLiberar) {
+            const id = btnLiberar.dataset.id;
+            if(!confirm('¿Estás seguro de liberar la mesa? Esto cerrará la sesión del cliente.')) return;
             await accionMesa(id, 'liberar');
         }
     });
 
     async function accionMesa(id, accion) {
         try {
-            const res = await fetch(`/api/mesas/${id}/${accion}`, { method: 'POST' });
-            if(res.ok) cargarMesas();
-            else alert('Error al procesar la acción');
+            const res = await fetch(`/api/mesas/${id}/${accion}`, { 
+                method: 'POST',
+                credentials: 'include'
+            });
+            
+            if(res.ok) {
+                cargarMesas(); // Recargar para ver cambios
+            } else {
+                alert('Error al procesar la acción');
+            }
         } catch (e) { console.error(e); }
     }
 
     botonSalir.addEventListener('click', async () => {
-        await fetch('/api/auth/logout', { method: 'POST' });
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
         window.location.href = '/index.html';
     });
 
-    // Auto recarga para ver si se liberan mesas solas (futuro)
+    // Auto recarga cada 10 segundos para mantener sincronizados a todos los meseros
     setInterval(cargarMesas, 10000);
 });

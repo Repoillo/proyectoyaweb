@@ -91,29 +91,27 @@ input {
     width: 100%;
 }
 
-/* --- AGREGA ESTE CÓDIGO --- */
 .loguito {
     background-color: var(--lightgray);
     width: 100%;
     margin: 8px 0;
-    border-radius: 20px; /* Para que coincida con los botones */
+    border-radius: 20px; 
     display: flex;
     align-items: center;
-    padding-left: 15px; /* Espacio para el ícono */
+    padding-left: 15px; 
 }
 
 .loguito ion-icon {
-    color: #555; /* Un color gris para el ícono */
+    color: #555; 
     font-size: 1.1em;
 }
 
 .loguito input {
-    /* Le quitamos el fondo y el margen al input porque ya lo tiene el wrapper */
     background-color: transparent;
     margin: 0;
     width: 100%;
     border: none;
-    outline: none; /* Quitamos el borde azul al hacer clic */
+    outline: none; 
 }
 
 .container {
@@ -147,8 +145,6 @@ input {
     z-index: 1;
 }
 
-/* --- ESTA ES LA SECCIÓN CORREGIDA --- */
-
 .overlaycontainer {
     position: absolute;
     top: 0;
@@ -157,11 +153,7 @@ input {
     height: 100%;
     overflow: hidden;
     z-index: 100;
-    
-    /* Lógica correcta: Redondeamos las esquinas IZQUIERDAS para el estado inicial */
     border-radius: 150px 0 0 150px;
-    
-    /* Animamos la transformación Y el cambio de radio */
     transition: transform 0.6s ease-in-out, border-radius 0.6s ease-in-out;
 }
 
@@ -170,7 +162,6 @@ input {
     background: linear-gradient(to right, #34495e, var(--primaryblue));
     color: var(--lightgraytext);
     position: relative;
-    /* Simplificado: El overlay ya no se mueve, solo llena su contenedor */
     left: 0;
     height: 100%;
     width: 100%;
@@ -187,17 +178,14 @@ input {
 }
 
 .overlayleft {
-    /* Oculto por defecto */
     transform: translateX(-100%);
 }
 
 .overlayright {
-    /* Visible por defecto */
     transform: translateX(0);
 }
 
-
-/* --- LÓGICA DE ANIMACIÓN CORREGIDA --- */
+/* --- LÓGICA DE ANIMACIÓN LOGIN --- */
 
 .container.rightpanelactive .signin {
     transform: translateX(100%);
@@ -211,19 +199,16 @@ input {
 }
 
 .container.rightpanelactive .overlaycontainer {
-    /* El contenedor se mueve a la izquierda */
     transform: translateX(-100%);
-    /* Magia: Invertimos las esquinas redondeadas */
     border-radius: 0 150px 150px 0;
 }
 
-/* Intercambiamos la visibilidad de los paneles de texto */
 .container.rightpanelactive .overlayright {
-    transform: translateX(100%); /* Se oculta */
+    transform: translateX(100%); 
 }
 
 .container.rightpanelactive .overlayleft {
-    transform: translateX(0); /* Se muestra */
+    transform: translateX(0); 
 }
 
 
@@ -537,24 +522,24 @@ input {
     background-color: #f1f1f1; /* Hover más notable */
 }
 
-/* El estilo de selección que ya tenías, pero con !important para asegurar */
 .tablaDatos tbody tr.seleccionado {
     background-color: #fef2e7 !important; /* Naranja claro */
     color: var(--primaryorange);
     font-weight: bold;
 }
-/* --- ESTILOS PARA PEDIDOS COMPLETADOS --- */
+/* --- ESTILOS PARA PEDIDOS COMPLETADOS Y MESAS --- */
 
 .contenedor-pedidos {
     display: flex;
     flex-wrap: wrap;
     gap: 20px;
     justify-content: center;
+    align-content: flex-start; /* Importante para que no se estiren verticalmente */
 }
 
 .pedido-item {
     background-color: var(--containerbg);
-    border-radius: 50px; /* Forma ovalada/circular */
+    border-radius: 20px; /* Tarjeta redondeada */
     padding: 20px 30px;
     min-width: 250px;
     text-align: center;
@@ -562,6 +547,10 @@ input {
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
     border: 1px solid var(--lightgray);
+    /* Flex para contenido interno de la tarjeta */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
 .pedido-item:hover {
@@ -632,13 +621,14 @@ input {
 .detalle-pedido-contenedor.oculto {
     display: none;
 }
-/* Ajuste para botones con íconos */
+
 .boton ion-icon {
     vertical-align: middle;
     margin-right: 5px;
     font-size: 1.1em;
 }
-/* --- ESTILOS PÁGINA COCINA --- */
+
+/* --- ESTILOS PÁGINA COCINA Y MESERO --- */
 
 .paginaCocina {
     background-color: var(--bgcolor);
@@ -656,6 +646,7 @@ input {
     color: white;
     padding: 15px 30px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    height: 80px; /* Altura fija */
 }
 
 .headerCocina h1 {
@@ -673,9 +664,11 @@ input {
     padding: 20px;
     height: calc(100vh - 80px); /* Altura total menos el header */
     overflow-y: auto; /* Scroll solo para la lista */
+    /* Mejora del scroll en móvil */
+    -webkit-overflow-scrolling: touch; 
 }
 
-/* Estilo de "Tabla" */
+/* Estilo de "Tabla" Comandas */
 .tablaComandasHeader {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 200px; /* 4 columnas */
@@ -813,135 +806,151 @@ input {
     transform: translateX(-50%) translateY(0);
 }
 
-/* --- INICIO DE REGLAS RESPONSIVAS --- */
-/* Aplicar todo esto en pantallas de 768px o menos (tablets y celulares) */
+/* --- BOTÓN FLOTANTE QR --- */
+#btnExportarQR {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: var(--primaryblue);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2em; /* Icono grande */
+    z-index: 1000;
+    transition: transform 0.2s, background-color 0.2s;
+    padding: 0; 
+}
+
+#btnExportarQR:hover {
+    transform: scale(1.1);
+    background-color: #34495e;
+}
+
+#btnExportarQR ion-icon {
+    margin: 0; 
+}
+
+/* --- INICIO DE REGLAS RESPONSIVAS (TABLET Y MOVIL) --- */
 
 @media (max-width: 768px) {
 
-    /* === 1. Arreglos para index.html (Login) === */
-    
-    /* Quitamos el centrado vertical y márgenes extraños del body */
+    /* === 1. Login Móvil (Simplificado) === */
     body {
         height: auto;
         min-height: 100vh;
         margin: 0;
-        padding: 20px 0; /* Un poco de espacio arriba y abajo */
+        padding: 20px 0; 
     }
     
-    /* Hacemos que el contenedor sea una 'tarjeta' (no 100% de ancho) */
     .container {
-        width: 90%;
-        max-width: 450px; /* Un ancho máximo razonable */
-        min-height: auto;
+        width: 95%;
+        max-width: 100%; 
+        min-height: 600px; /* Más alto para que quepan los forms verticalmente */
         border-radius: 10px;
-        box-shadow: 0 14px 28px rgba(0,0,0,0.25), 0 10px 10px rgba(0,0,0,0.22);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
     }
 
-    /* --- Arreglo para la animación de login en celular --- */
-    /* En celular, el panel de overlay se oculta */
     .overlaycontainer {
-        display: none;
-    }
-
-    /* Hacemos que los 2 formularios (login y registro) ocupen el 100% */
-    .formcontainer {
-        position: relative; /* Lo sacamos de 'absolute' */
-        width: 100%;
-        height: auto;
-    }
-    .signin {
-        z-index: 2;
-        padding: 40px 0;
-    }
-    .signup {
-        opacity: 1; /* Hacemos visible el de registro */
-        z-index: 1;
-        padding: 40px 0;
-    }
-    
-    /* PERO, no podemos cambiar de uno a otro. El JS usa los botones del overlay. */
-    /* ¡NECESITAMOS CAMBIAR EL JS! ... O... */
-
-    /* --- RECTIFICACIÓN: La animación es muy compleja para CSS --- */
-    /* Dejemos la animación, pero ajustemos el layout */
-    
-    /* .container {
-        width: 100%;
-        max-width: 100%;
-        min-height: 100vh;
-        border-radius: 0;
-        box-shadow: none;
-    } */
-    /* Lo anterior (comentado) es lo que no te gustó. */
-
-    /* --- Propuesta 2: Simplificar la animación --- */
-    /* En celular, el overlay se vuelve vertical y ocupa la mitad superior */
-    .overlaycontainer {
+        /* En móvil, el overlay pasa a ser un banner superior o inferior, o se oculta */
+        /* Para simplificar en tu proyecto: Lo movemos arriba */
+        top: 0;
         left: 0;
         width: 100%;
-        height: 40%; /* El overlay ocupa el 40% superior */
-        border-radius: 0;
+        height: 30%; /* Parte superior */
+        border-radius: 0 0 20px 20px; /* Redondeado abajo */
+        z-index: 10;
     }
-    .overlaypanel {
-        padding: 0 20px; /* Menos padding */
-    }
-
-    /* Los formularios se mueven verticalmente, no horizontalmente */
+    
     .formcontainer {
         width: 100%;
-        height: 60%; /* Ocupa el 60% inferior */
-        top: 40%; /* Se posiciona debajo del overlay */
+        height: 70%; /* Parte inferior */
+        top: 30%;
+        left: 0;
+        padding: 20px;
     }
-    .signin { left: 0; }
-    .signup { left: 0; }
-
-    /* Lógica de JS */
+    
+    /* Ajustes de animación móvil (Login vs Registro) */
     .container.rightpanelactive .signin {
-        transform: translateY(100%); /* Se oculta hacia abajo */
+        transform: translateY(100%); /* Se va abajo */
     }
     .container.rightpanelactive .signup {
-        transform: translateY(0); /* Sube para mostrarse */
+        transform: translateY(0); 
         opacity: 1;
         z-index: 5;
     }
     .container.rightpanelactive .overlaycontainer {
-        transform: translateY(-100%); /* Se oculta hacia arriba */
+        transform: translateY(0); /* El overlay se queda, o cambia de color */
+        border-radius: 0 0 20px 20px;
     }
-    /* (Fin del rediseño de animación de login) */
-    
 
-    /* === 2. Arreglos para cocina.html (Cocinero) === */
-    /* (Estos se quedan, funcionaron bien) */
-    
+    /* === 2. Header Cocina/Mesero Móvil === */
     .headerCocina {
         padding: 10px 15px;
+        flex-direction: row; /* Mantener fila */
+        height: 60px;
     }
     .headerCocina h1 {
-        font-size: 1.3em;
+        font-size: 1.2em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .headerCocina .botonSalir {
         padding: 8px 12px;
         font-size: 10px;
+        width: auto; /* No forzar ancho */
     }
 
     .contenedorCocina {
         padding: 10px;
-        height: calc(100vh - 65px); /* Ajustar a nuevo header */
+        height: calc(100vh - 60px); 
     }
 
-    /* Ocultamos la "tabla" header */
+    /* === 3. VISTA MESERO (Tarjetas de Mesa) === */
+    /* Queremos que las tarjetas ocupen todo el ancho para ser fáciles de tocar */
+    .contenedor-pedidos {
+        flex-direction: column; /* Uno debajo del otro */
+        align-items: stretch; /* Estirar al ancho completo */
+        gap: 15px;
+        padding-bottom: 20px;
+    }
+    
+    .pedido-item {
+        width: 100%; /* Ancho total */
+        min-width: 0; /* Reset */
+        padding: 15px;
+        /* Más espacio para los dedos */
+        min-height: 150px; 
+    }
+
+    /* Botones dentro de las tarjetas de mesero más grandes */
+    .pedido-item button {
+        padding: 15px 0; /* Touch target grande */
+        font-size: 14px;
+        margin-top: 10px;
+    }
+
+    /* === 4. VISTA COCINA (Lista Comandas) === */
     .tablaComandasHeader {
-        display: none;
+        display: none; /* Ocultar encabezados en móvil */
     }
 
-    /* Convertimos la lista de 4 columnas en un grid de 2x2 */
     .comanda-item {
+        /* Transformar la fila en una tarjeta */
         grid-template-columns: 1fr auto; 
         grid-template-rows: auto auto; 
-        gap: 10px 15px;
+        gap: 10px;
         padding: 15px;
     }
     
+    /* Reorganizar celdas en Grid */
     .comanda-item .comanda-info:nth-of-type(1) {
         grid-column: 1 / 2;
         grid-row: 1 / 2;
@@ -951,23 +960,30 @@ input {
         grid-row: 1 / 2;
         text-align: right;
     }
-    .comanda-item .comanda-info:nth-of-type(2) {
+    .comanda-item .comanda-info:nth-of-type(2) { /* Tiempo */
         grid-column: 1 / 2;
         grid-row: 2 / 3;
+        font-size: 0.9em;
+        color: #777;
     }
     .comanda-item .comanda-acciones {
         grid-column: 2 / 3;
         grid-row: 2 / 3;
     }
 
-    /* Arreglos para el modal */
-    .modal.oculto .contenidoModal {
-        transform: translateY(0);
+    /* Botones de acción en cocina más grandes */
+    .comanda-acciones .boton-accion {
+        padding: 10px 15px;
+        font-size: 1.4em;
     }
+    
+    /* === 5. Modales Móviles === */
     .contenidoModal {
-        width: 95%; /* Modal casi llena la pantalla */
+        width: 95%;
+        max-height: 90vh;
+        overflow-y: auto;
         padding: 20px;
     }
-
 }
+
 /* --- FIN DE REGLAS RESPONSIVAS --- */
