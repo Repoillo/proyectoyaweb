@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tituloModal = document.getElementById('tituloModal');
     const formulario = document.getElementById('formulario');
     const camposDinamicos = document.getElementById('camposDinamicos');
-    const botonCancelar = document.querySelector('.botonCancelar');
+    const botonCancelar = modal.querySelector('.botonCancelar');    
 
     // --- ESTADO DE LA APP ---
     let seccionActiva = null;
@@ -81,12 +81,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } else if (seccion === 'ingredientes') {
                     itemId = item.id_ing;
+                    
+                    let infoCosto = '-';
+                    let infoStock = '-';
+
+                    if(item.cantidad_por_unidad > 1) {
+                        const costoEnvase = (parseFloat(item.costo_ing) * parseFloat(item.cantidad_por_unidad)).toFixed(2);
+                        const piezasRestantes = (parseFloat(item.cantidad_disponible) / parseFloat(item.cantidad_por_unidad)).toFixed(1);
+                        
+                        infoCosto = `$${costoEnvase} <small style="color:#777">(por envase)</small>`;
+                        infoStock = `${piezasRestantes} pzas`; 
+                    } else {
+                        infoCosto = `$${parseFloat(item.costo_ing).toFixed(2)} /${item.unidad_medida}`;
+                        infoStock = `${parseFloat(item.cantidad_disponible).toFixed(2)} ${item.unidad_medida}`;
+                    }
+
                     fila.dataset.ingredientesData = JSON.stringify(item);
                      innerHTML = `
-                        <td>${item.nombre_ing}</td>
-                        <td>${item.unidad_medida || '-'}</td>
-                        <td>$${parseFloat(item.costo_ing).toFixed(2)}</td>
-                        <td>${item.cantidad_disponible}</td>`;
+                        <td style="font-weight:500">${item.nombre_ing}</td>
+                        <td>${item.unidad_medida}</td>
+                        <td>${infoCosto}</td>
+                        <td style="font-weight:bold; color: var(--primaryblue);">${infoStock}</td>`;
 
                 } else if (seccion === 'empleados') {
                     itemId = item.id_empleado;
@@ -240,6 +255,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!respuesta.ok) throw new Error('No se pudo eliminar.');
                     
                     cargarDatos(seccion);
+                    if (seccion === 'ingredientes') {
+                        await cargarIngredientesCache();
+                    }
 
                 } catch (error) {
                     console.error('Error al eliminar:', error);
@@ -331,24 +349,44 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
         } else if (seccion === 'ingredientes') {
-            camposDinamicos.innerHTML = `
-                <label for="nombre">Nombre del Ingrediente:</label>
-                <input type="text" id="nombre" name="nombre" value="${datos.nombre_ing || ''}" required>
+                let costoCaja = '';
+                let piezasStock = '';
                 
-                <label for="unidad_medida">Unidad de Medida:</label>
-                <select id="unidad_medida" name="unidad_medida" required>
-                    <option value="">-- Selecciona --</option>
-                    <option value="gr" ${datos.unidad_medida === 'gr' ? 'selected' : ''}>Gramos (gr)</option>
-                    <option value="ml" ${datos.unidad_medida === 'ml' ? 'selected' : ''}>Mililitros (ml)</option>
-                    <option value="pza" ${datos.unidad_medida === 'pza' ? 'selected' : ''}>Piezas (pza)</option>
-                </select>
+                if (datos.cantidad_disponible && datos.cantidad_por_unidad) {
+                    piezasStock = (parseFloat(datos.cantidad_disponible) / parseFloat(datos.cantidad_por_unidad)).toFixed(1);
+                    costoCaja = (parseFloat(datos.costo_ing) * parseFloat(datos.cantidad_por_unidad)).toFixed(2);
+                }
 
-                <label for="costo_unitario">Costo por Unidad (Ej: costo de 1 gr):</label>
-                <input type="number" id="costo_unitario" name="costo_unitario" step="0.01" value="${datos.costo_ing || 0.00}" required>
+                camposDinamicos.innerHTML = `
+                    <label for="nombre">Nombre del Ingrediente:</label>
+                    <input type="text" id="nombre" name="nombre" value="${datos.nombre_ing || ''}" placeholder="Ej. Leche Entera" required>
+                    
+                    <label for="unidad_medida">Unidad de Medida (Consumo):</label>
+                    <small style="color: gray;">¿Cómo lo usas en la cocina?</small>
+                    <select id="unidad_medida" name="unidad_medida" required>
+                        <option value="">-- Selecciona --</option>
+                        <option value="gr" ${datos.unidad_medida === 'gr' ? 'selected' : ''}>Gramos (gr)</option>
+                        <option value="ml" ${datos.unidad_medida === 'ml' ? 'selected' : ''}>Mililitros (ml)</option>
+                        <option value="pza" ${datos.unidad_medida === 'pza' ? 'selected' : ''}>Piezas sueltas (pza)</option>
+                    </select>
 
-                <label for="stock">Cantidad en Inventario (Stock):</label>
-                <input type="number" id="stock" name="stock" step="0.01" value="${datos.cantidad_disponible || 0.00}" required>
-            `;
+                    <div style="background: #f0f4f8; padding: 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #ccc;">
+                        <h4 style="margin-top:0; color: var(--primaryblue);">Configuración de Compra (Envase)</h4>
+                        
+                        <label for="cantidad_por_unidad">¿Cuánto trae cada envase?</label>
+                        <input type="number" id="cantidad_por_unidad" name="cantidad_por_unidad" step="0.01" value="${datos.cantidad_por_unidad || ''}" placeholder="Ej. 3750 (si es un galón en ml)" required>
+
+                        <label for="costo_compra">Costo por Envase Completo ($):</label>
+                        <input type="number" id="costo_compra" name="costo_compra" step="0.01" value="${costoCaja}" placeholder="Ej. 100.00 (lo que cuesta el galón)" required>
+
+                        <label for="piezas_compradas">Piezas en Inventario (Cajas/Galones):</label>
+                        <input type="number" id="piezas_compradas" name="piezas_compradas" step="0.1" value="${piezasStock}" placeholder="Ej. 10" required>
+                        
+                        <p style="font-size: 0.8em; color: #666; margin-top: 5px;">
+                            * El sistema calculará automáticamente el total (ml/gr) y el costo unitario para las recetas.
+                        </p>
+                    </div>
+                `;
         
         } else if (seccion === 'empleados') {
             // ¡ESTE ES EL BLOQUE NUEVO PARA EMPLEADOS!
@@ -420,6 +458,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             modal.classList.add('oculto');
             cargarDatos(seccionActiva);
+            if (seccionActiva === 'ingredientes') {
+                await cargarIngredientesCache(); 
+            }
 
         } catch (error) {
             console.error('Error al guardar:', error);

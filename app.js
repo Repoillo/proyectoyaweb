@@ -69,27 +69,30 @@ function requireOwner(req, res, next) {
 
 // === Rutas de Autenticación ===
 app.post('/api/auth/register', async (req, res) => {
-    const { nombre_usuario, correo_usuario, contra } = req.body;
-    
+    const { nombre_usuario, correo_usuario, contra, rol } = req.body; // Recibimos 'rol'
     const id_restaurante_principal = 1; 
+
+    // Validar que el rol sea válido (solo permitimos crear staff operativo)
+    const rolesPermitidos = ['cocinero', 'mesero'];
+    const rolFinal = rolesPermitidos.includes(rol) ? rol : 'cocinero';
 
     try {
         const contra_hash = await bcrypt.hash(contra, 10);
         
         await pool.query(
             `INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, id_restaurante, rol) 
-             VALUES (?, ?, ?, ?, 'cocinero')`,
-            [nombre_usuario, correo_usuario, contra_hash, id_restaurante_principal]
+             VALUES (?, ?, ?, ?, ?)`,
+            [nombre_usuario, correo_usuario, contra_hash, id_restaurante_principal, rolFinal]
         );
         
-        res.status(201).json({ message: "Cocinero registrado exitosamente." });
+        res.status(201).json({ message: `${rolFinal.charAt(0).toUpperCase() + rolFinal.slice(1)} registrado exitosamente.` });
 
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY' && error.message.includes('correo_usuario')) {
              return res.status(409).json({ message: 'El correo electrónico ya está en uso.' });
         }
-        console.error('Error al registrar cocinero:', error);
-        res.status(500).json({ message: 'Error interno del servidor al registrar.' });
+        console.error('Error al registrar usuario:', error);
+        res.status(500).json({ message: 'Error interno al registrar.' });
     }
 });
 
@@ -143,12 +146,11 @@ app.get('/api/auth/status', requireAuth, (req, res) => {
 
 // === RUTAS CRUD (PROTEGIDAS) ===
 
-// --- PRODUCTOS (ACTUALIZADO CON RECETAS) ---
+// --- PRODUCTOS (CON LÓGICA DE RECICLAJE) ---
 app.get('/api/productos', requireAuth, requireOwner, async (req, res) => {
     try {
         const [productos] = await pool.query(
-            `SELECT 
-                id_producto, nombre, descripcion, precio_venta, tipo 
+            `SELECT id_producto, nombre, descripcion, precio_venta, tipo 
              FROM productos 
              WHERE id_restaurante = ? AND estado = 'activo'`, 
             [req.session.restauranteId]
@@ -164,38 +166,62 @@ app.post('/api/productos', requireAuth, requireOwner, async (req, res) => {
     const { nombre, descripcion, precio_venta, tipo, receta } = req.body;
     const id_restaurante = req.session.restauranteId;
     
-    // Iniciar transacción
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-        // 1. Insertar el producto
-        const [productoResult] = await connection.query(
-            `INSERT INTO productos (id_restaurante, nombre, descripcion, precio_venta, tipo) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [id_restaurante, nombre, descripcion, precio_venta, tipo]
+        const [existente] = await connection.query(
+            `SELECT id_producto, estado FROM productos 
+             WHERE nombre = ? AND id_restaurante = ?`,
+            [nombre.trim(), id_restaurante]
         );
-        
-        const id_producto = productoResult.insertId;
 
-        // 2. Insertar la receta (si existe)
+        let id_producto_final;
+
+        if (existente.length > 0) {
+
+            const producto = existente[0];
+
+            if (producto.estado === 'activo') {
+                await connection.rollback();
+                return res.status(409).json({ message: 'Ya existe un producto con este nombre.' });
+            }
+
+            id_producto_final = producto.id_producto;
+
+            await connection.query(
+                `UPDATE productos 
+                 SET descripcion = ?, precio_venta = ?, tipo = ?, estado = 'activo' 
+                 WHERE id_producto = ?`,
+                [descripcion, precio_venta, tipo, id_producto_final]
+            );
+            
+            await connection.query('DELETE FROM recetas WHERE id_producto = ?', [id_producto_final]);
+
+        } else {
+            const [productoResult] = await connection.query(
+                `INSERT INTO productos (id_restaurante, nombre, descripcion, precio_venta, tipo, estado) 
+                 VALUES (?, ?, ?, ?, ?, 'activo')`,
+                [id_restaurante, nombre.trim(), descripcion, precio_venta, tipo]
+            );
+            id_producto_final = productoResult.insertId;
+        }
+
         if (receta && receta.length > 0) {
-            const valoresReceta = receta.map(item => [id_producto, item.id_ingrediente, item.cantidad_usada]);
+            const valoresReceta = receta.map(item => [id_producto_final, item.id_ingrediente, item.cantidad_usada]);
             await connection.query(
                 `INSERT INTO recetas (id_producto, id_ingrediente, cantidad_usada) VALUES ?`,
                 [valoresReceta]
             );
         }
 
-        // 3. Confirmar transacción
         await connection.commit();
-        res.status(201).json({ message: 'Producto y receta creados exitosamente.' });
+        res.status(201).json({ message: 'Producto guardado exitosamente.' });
 
     } catch(error) {
-        // 4. Revertir en caso de error
         await connection.rollback();
-        console.error('Error al crear producto con receta:', error);
-        res.status(500).json({message: 'Error al crear el producto.'});
+        console.error('Error al guardar producto:', error);
+        res.status(500).json({message: 'Error al procesar el producto.'});
     } finally {
         connection.release();
     }
@@ -206,26 +232,21 @@ app.put('/api/productos/:id', requireAuth, requireOwner, async (req, res) => {
     const { nombre, descripcion, precio_venta, tipo, receta } = req.body;
     const id_restaurante = req.session.restauranteId;
 
-    // Iniciar transacción
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-        // 1. Actualizar el producto
+        // Actualizar el producto
         await connection.query(
             `UPDATE productos 
              SET nombre = ?, descripcion = ?, precio_venta = ?, tipo = ? 
              WHERE id_producto = ? AND id_restaurante = ?`,
-            [nombre, descripcion, precio_venta, tipo, id, id_restaurante]
+            [nombre.trim(), descripcion, precio_venta, tipo, id, id_restaurante]
         );
 
-        // 2. Borrar la receta anterior
-        await connection.query(
-            `DELETE FROM recetas WHERE id_producto = ?`,
-            [id]
-        );
+        // Actualizar receta (Borrar y Crear)
+        await connection.query(`DELETE FROM recetas WHERE id_producto = ?`, [id]);
 
-        // 3. Insertar la nueva receta (si existe)
         if (receta && receta.length > 0) {
             const valoresReceta = receta.map(item => [id, item.id_ingrediente, item.cantidad_usada]);
             await connection.query(
@@ -234,14 +255,16 @@ app.put('/api/productos/:id', requireAuth, requireOwner, async (req, res) => {
             );
         }
 
-        // 4. Confirmar transacción
         await connection.commit();
-        res.json({ message: 'Producto y receta actualizados exitosamente.' });
+        res.json({ message: 'Producto actualizado exitosamente.' });
 
     } catch(error) {
-        // 5. Revertir en caso de error
         await connection.rollback();
-        console.error('Error al actualizar producto con receta:', error);
+        console.error('Error al actualizar producto:', error);
+        // Manejo de duplicados al renombrar
+        if (error.code === 'ER_DUP_ENTRY') {
+             return res.status(409).json({ message: 'Ya existe otro producto con ese nombre.' });
+        }
         res.status(500).json({message: 'Error al actualizar el producto.'});
     } finally {
         connection.release();
@@ -256,10 +279,10 @@ app.delete('/api/productos/:id', requireAuth, requireOwner, async (req, res) => 
              WHERE id_producto = ? AND id_restaurante = ?`,
             [id, req.session.restauranteId]
         );
-        res.json({ message: 'Producto inactivado exitosamente.' });
+        res.json({ message: 'Producto eliminado exitosamente.' });
     } catch(error) {
         console.error('Error al inactivar producto:', error);
-        res.status(500).json({message: 'Error al inactivar el producto.'});
+        res.status(500).json({message: 'Error al eliminar el producto.'});
     }
 });
 
@@ -283,7 +306,6 @@ app.get('/api/recetas/:id_producto', requireAuth, requireOwner, async (req, res)
 });
 
 
-// --- INGREDIENTES (CRUD COMPLETO) ---
 app.get('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
     try {
         const [ingredientes] = await pool.query(
@@ -293,8 +315,9 @@ app.get('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
                 nombre AS nombre_ing,
                 nombre, 
                 unidad_medida, 
-                costo_unitario AS costo_ing, 
-                stock AS cantidad_disponible 
+                costo_unitario AS costo_ing, -- Este es el costo por ml/gr
+                stock AS cantidad_disponible, -- Este es el stock total en ml/gr
+                cantidad_por_unidad -- NUEVO: Para saber de qué tamaño son las piezas
              FROM ingredientes 
              WHERE id_restaurante = ? AND estado = 'activo'`, 
             [req.session.restauranteId]
@@ -308,32 +331,72 @@ app.get('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
 
 app.post('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
     try {
-        const { nombre, unidad_medida, costo_unitario, stock } = req.body;
+        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, piezas_compradas } = req.body;
         const id_restaurante = req.session.restauranteId;
         
-        await pool.query(
-            `INSERT INTO ingredientes (id_restaurante, nombre, unidad_medida, costo_unitario, stock, estado) 
-             VALUES (?, ?, ?, ?, ?, 'activo')`,
-            [id_restaurante, nombre, unidad_medida, costo_unitario, stock]
+        const costo_unitario_calculado = parseFloat(costo_compra) / parseFloat(cantidad_por_unidad);
+        const stock_total = parseFloat(piezas_compradas) * parseFloat(cantidad_por_unidad);
+
+        const [existente] = await pool.query(
+            `SELECT id_ingrediente, estado FROM ingredientes 
+             WHERE nombre = ? AND id_restaurante = ?`,
+            [nombre.trim(), id_restaurante] 
         );
-        res.status(201).json({ message: 'Ingrediente creado exitosamente.' });
+
+        if (existente.length > 0) {
+            const ingrediente = existente[0];
+
+            if (ingrediente.estado === 'activo') {
+                return res.status(409).json({ message: 'Ya existe un ingrediente con este nombre.' });
+            }
+
+            await pool.query(
+                `UPDATE ingredientes 
+                 SET unidad_medida = ?, 
+                     costo_unitario = ?, 
+                     stock = ?, 
+                     cantidad_por_unidad = ?,
+                     estado = 'activo'  -- ¡Aquí ocurre la magia!
+                 WHERE id_ingrediente = ?`,
+                [unidad_medida, costo_unitario_calculado, stock_total, cantidad_por_unidad, ingrediente.id_ingrediente]
+            );
+
+            return res.status(200).json({ message: 'Ingrediente restaurado y actualizado exitosamente.' });
+
+        } else {
+            await pool.query(
+                `INSERT INTO ingredientes (id_restaurante, nombre, unidad_medida, costo_unitario, stock, cantidad_por_unidad, estado) 
+                 VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
+                [id_restaurante, nombre.trim(), unidad_medida, costo_unitario_calculado, stock_total, cantidad_por_unidad]
+            );
+            return res.status(201).json({ message: 'Ingrediente creado exitosamente.' });
+        }
+
     } catch(error) {
-        console.error('Error al crear ingrediente:', error);
-        res.status(500).json({message: 'Error al crear el ingrediente.'});
+        console.error('Error al crear/restaurar ingrediente:', error);
+        res.status(500).json({message: 'Error al procesar el ingrediente.'});
     }
 });
 
 app.put('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
-        const { nombre, unidad_medida, costo_unitario, stock } = req.body;
+        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, piezas_compradas } = req.body;
         const id_restaurante = req.session.restauranteId;
+
+        const costo_unitario_calculado = parseFloat(costo_compra) / parseFloat(cantidad_por_unidad);
+
+        const stock_total = parseFloat(piezas_compradas) * parseFloat(cantidad_por_unidad);
         
         await pool.query(
             `UPDATE ingredientes 
-             SET nombre = ?, unidad_medida = ?, costo_unitario = ?, stock = ? 
+             SET nombre = ?, 
+                 unidad_medida = ?, 
+                 costo_unitario = ?, 
+                 stock = ?, 
+                 cantidad_por_unidad = ?
              WHERE id_ingrediente = ? AND id_restaurante = ?`,
-            [nombre, unidad_medida, costo_unitario, stock, id, id_restaurante]
+            [nombre, unidad_medida, costo_unitario_calculado, stock_total, cantidad_por_unidad, id, id_restaurante]
         );
         res.json({ message: 'Ingrediente actualizado exitosamente.' });
     } catch(error) {
@@ -341,7 +404,6 @@ app.put('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => 
         res.status(500).json({message: 'Error al actualizar el ingrediente.'});
     }
 });
-
 app.delete('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
@@ -357,16 +419,11 @@ app.delete('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) 
     }
 });
 
-
-// --- EMPLEADOS (CRUD) ---
+// --- EMPLEADOS (CON LÓGICA DE RECICLAJE) ---
 app.get('/api/empleados', requireAuth, requireOwner, async (req, res) => {
     try {
         const [empleados] = await pool.query(
-            `SELECT 
-                id_empleado, 
-                nombre_empleado, 
-                rol, 
-                sueldo 
+            `SELECT id_empleado, nombre_empleado, rol, sueldo 
              FROM empleados 
              WHERE id_restaurante = ? AND estado = 'activo'`, 
             [req.session.restauranteId]
@@ -377,25 +434,54 @@ app.get('/api/empleados', requireAuth, requireOwner, async (req, res) => {
         res.status(500).json({message: 'Error al cargar los empleados.'});
     }
 });
-// POST (Crear) - /api/empleados
+
 app.post('/api/empleados', requireAuth, requireOwner, async (req, res) => {
     try {
         const { nombre_empleado, rol, sueldo } = req.body;
         const id_restaurante = req.session.restauranteId;
         
-        await pool.query(
-            `INSERT INTO empleados (id_restaurante, nombre_empleado, rol, sueldo, estado) 
-             VALUES (?, ?, ?, ?, 'activo')`,
-            [id_restaurante, nombre_empleado, rol, sueldo]
+        // 1. VERIFICAR SI YA EXISTE (Inactivo o Activo)
+        const [existente] = await pool.query(
+            `SELECT id_empleado, estado FROM empleados 
+             WHERE nombre_empleado = ? AND id_restaurante = ?`,
+            [nombre_empleado.trim(), id_restaurante]
         );
-        res.status(201).json({ message: 'Empleado creado exitosamente.' });
+
+        if (existente.length > 0) {
+            // CASO A: YA EXISTE
+            const empleado = existente[0];
+
+            if (empleado.estado === 'activo') {
+                // Opcional: Si quieres permitir homónimos, quita este if.
+                // Pero es mejor avisar.
+                return res.status(409).json({ message: 'Ya existe un empleado con este nombre.' });
+            }
+
+            // CASO B: EXISTE PERO INACTIVO -> REVIVIR
+            await pool.query(
+                `UPDATE empleados 
+                 SET rol = ?, sueldo = ?, estado = 'activo' 
+                 WHERE id_empleado = ?`,
+                [rol, sueldo, empleado.id_empleado]
+            );
+            return res.status(200).json({ message: 'Empleado reactivado y actualizado.' });
+
+        } else {
+            // CASO C: NO EXISTE -> CREAR
+            await pool.query(
+                `INSERT INTO empleados (id_restaurante, nombre_empleado, rol, sueldo, estado) 
+                 VALUES (?, ?, ?, ?, 'activo')`,
+                [id_restaurante, nombre_empleado.trim(), rol, sueldo]
+            );
+            return res.status(201).json({ message: 'Empleado creado exitosamente.' });
+        }
+
     } catch(error) {
         console.error('Error al crear empleado:', error);
         res.status(500).json({message: 'Error al crear el empleado.'});
     }
 });
 
-// PUT (Actualizar) - /api/empleados/:id
 app.put('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
@@ -406,7 +492,7 @@ app.put('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
             `UPDATE empleados 
              SET nombre_empleado = ?, rol = ?, sueldo = ? 
              WHERE id_empleado = ? AND id_restaurante = ?`,
-            [nombre_empleado, rol, sueldo, id, id_restaurante]
+            [nombre_empleado.trim(), rol, sueldo, id, id_restaurante]
         );
         res.json({ message: 'Empleado actualizado exitosamente.' });
     } catch(error) {
@@ -415,18 +501,15 @@ app.put('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
     }
 });
 
-// DELETE (Soft Delete) - /api/empleados/:id
 app.delete('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
-        const id_restaurante = req.session.restauranteId;
-        
         await pool.query(
             `UPDATE empleados SET estado = 'inactivo' 
              WHERE id_empleado = ? AND id_restaurante = ?`,
-            [id, id_restaurante]
+            [id, req.session.restauranteId]
         );
-        res.json({ message: 'Empleado inactivado exitosamente.' });
+        res.json({ message: 'Empleado eliminado exitosamente.' });
     } catch(error) {
         console.error('Error al inactivar empleado:', error);
         res.status(500).json({message: 'Error al inactivar el empleado.'});
@@ -554,16 +637,17 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
 });
 app.get('/api/pedidos/completados', requireAuth, requireOwner, async (req, res) => {
     try {
+        // CAMBIO: Ahora buscamos 'inactivo' porque esos son los que ya pagaron y se fueron
         const [pedidosCompletados] = await pool.query(
             `SELECT * FROM pedidos 
-             WHERE id_restaurante = ? AND estado = 'completado'
+             WHERE id_restaurante = ? AND estado = 'inactivo'
              ORDER BY fecha_creacion DESC`,
             [req.session.restauranteId]
         );
         res.json(pedidosCompletados);
     } catch(error) {
-        console.error('Error al obtener pedidos completados:', error);
-        res.status(500).json({message: 'Error al cargar los pedidos completados.'});
+        console.error('Error al obtener historial de pedidos:', error);
+        res.status(500).json({message: 'Error al cargar el historial.'});
     }
 });
 // GET /api/pedidos/completados/:id (NUEVA RUTA PARA DETALLES)
@@ -617,20 +701,21 @@ app.get('/api/pedidos/completados/:id', requireAuth, requireOwner, async (req, r
         res.status(500).json({ message: 'Error al cargar los detalles del pedido.' });
     }
 });
-// PUT /api/pedidos/archivar-completados (NUEVA RUTA)
+// PUT /api/pedidos/archivar-completados (ACTUALIZADA)
 app.put('/api/pedidos/archivar-completados', requireAuth, requireOwner, async (req, res) => {
     try {
         const id_restaurante = req.session.restauranteId;
         
+        // CAMBIO: Ahora movemos de 'inactivo' (historial visible) a 'archivado' (oculto)
         const [result] = await pool.query(
             `UPDATE pedidos 
-             SET estado = 'inactivo' 
-             WHERE id_restaurante = ? AND estado = 'completado'`,
+             SET estado = 'archivado' 
+             WHERE id_restaurante = ? AND estado = 'inactivo'`,
             [id_restaurante]
         );
 
         res.json({ 
-            message: 'Pedidos archivados exitosamente.', 
+            message: 'Historial limpiado exitosamente.', 
             pedidosArchivados: result.affectedRows 
         });
 
@@ -694,6 +779,87 @@ app.get('/api/pedidos/cocina/detalles/:id_pedido', requireAuth, async (req, res)
     } catch(error) {
         console.error('Error al obtener detalles de receta para cocina:', error);
         res.status(500).json({message: 'Error al cargar los detalles.'});
+    }
+});
+app.get('/api/mesas', requireAuth, async (req, res) => {
+    try {
+        const [mesas] = await pool.query(
+            "SELECT * FROM mesas WHERE id_restaurante = ? ORDER BY id_mesa ASC",
+            [req.session.restauranteId]
+        );
+        res.json(mesas);
+    } catch (error) {
+        console.error('Error al obtener mesas:', error);
+        res.status(500).json({ message: 'Error al cargar las mesas.' });
+    }
+});
+
+// 2. POST Crear Mesa (Solo Dueño)
+app.post('/api/mesas', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { numero_mesa } = req.body;
+        await pool.query(
+            "INSERT INTO mesas (id_restaurante, numero_mesa, estado) VALUES (?, ?, 'libre')",
+            [req.session.restauranteId, numero_mesa]
+        );
+        res.status(201).json({ message: 'Mesa creada exitosamente.' });
+    } catch (error) {
+        console.error('Error al crear mesa:', error);
+        res.status(500).json({ message: 'Error al crear la mesa.' });
+    }
+});
+
+// 3. DELETE Eliminar Mesa (Solo Dueño)
+app.delete('/api/mesas/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        await pool.query(
+            "DELETE FROM mesas WHERE id_mesa = ? AND id_restaurante = ?",
+            [id, req.session.restauranteId]
+        );
+        res.json({ message: 'Mesa eliminada.' });
+    } catch (error) {
+        console.error('Error al eliminar mesa:', error);
+        res.status(500).json({ message: 'Error al eliminar la mesa.' });
+    }
+});
+
+// 4. POST Ocupar Mesa (Generar Código) - Para Mesero y Dueño
+app.post('/api/mesas/:id/ocupar', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        // Generar código de 3 dígitos al azar (100 - 999)
+        const codigo = Math.floor(Math.random() * 900) + 100;
+        
+        await pool.query(
+            "UPDATE mesas SET estado = 'ocupada', codigo_sesion = ? WHERE id_mesa = ? AND id_restaurante = ?",
+            [codigo, id, req.session.restauranteId]
+        );
+        
+        res.json({ message: 'Mesa ocupada.', codigo: codigo });
+    } catch (error) {
+        console.error('Error al ocupar mesa:', error);
+        res.status(500).json({ message: 'Error al generar el código.' });
+    }
+});
+
+// 5. POST Liberar Mesa (Borrar Código) - Para Mesero y Dueño
+app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Aquí podrías agregar validación: ¿Hay pedidos sin pagar en esta mesa?
+        // Por ahora lo haremos directo para mantenerlo simple.
+        
+        await pool.query(
+            "UPDATE mesas SET estado = 'libre', codigo_sesion = NULL WHERE id_mesa = ? AND id_restaurante = ?",
+            [id, req.session.restauranteId]
+        );
+        
+        res.json({ message: 'Mesa liberada exitosamente.' });
+    } catch (error) {
+        console.error('Error al liberar mesa:', error);
+        res.status(500).json({ message: 'Error al liberar la mesa.' });
     }
 });
 

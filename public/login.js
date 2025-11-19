@@ -34,12 +34,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const nombre = document.getElementById('registername').value;
         const correo = document.getElementById('registeremail').value;
         const contrasena = document.getElementById('registerpassword').value;
+        const rol = document.getElementById('registerrol').value; // Nuevo campo
         
         // El 'nombre_restaurante' ya no es necesario
         const datos = {
             nombre_usuario: nombre,
             correo_usuario: correo,
-            contra: contrasena
+            contra: contrasena,
+            rol: rol
         };
 
         try {
@@ -52,9 +54,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) {
                 throw new Error(data.message || 'Error en el registro.');
             }
-            alert('¡Cuenta de cocinero creada! Ahora puedes iniciar sesión.');
+            alert('¡Cuenta de empleado creada! Ahora puedes iniciar sesión.');
             formcuenta.reset();
-            // Cambiamos al panel de inicio de sesión
             container.classList.remove("rightpanelactive"); 
         } catch (error) {
             registererror.textContent = error.message;
@@ -83,15 +84,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(data.message || 'Credenciales incorrectas.');
             }
 
-            // --- ¡AQUÍ ESTÁ LA LÓGICA! ---
             if (data.rol === 'dueño') {
                 window.location.href = '/restaurante.html';
             } else if (data.rol === 'cocinero') {
                 window.location.href = '/cocina.html';
-            } else {
-                // Por si acaso
-                loginerror.textContent = 'Rol no reconocido.';
-            }
+            } else if (data.rol === 'mesero') {
+                window.location.href = '/mesero.html'; // Nueva página
+            } 
 
         } catch (error) {
             loginerror.textContent = error.message;
