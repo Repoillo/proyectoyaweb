@@ -987,3 +987,71 @@ input {
 }
 
 /* --- FIN DE REGLAS RESPONSIVAS --- */
+/* --- ESTILOS ESPECÍFICOS FINANZAS --- */
+.finanzas-controles {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    display: flex;
+    gap: 30px;
+    justify-content: center;
+    align-items: flex-end; /* Alinea los botones con los inputs */
+    flex-wrap: wrap;
+}
+
+.finanzas-grupo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.finanzas-grupo h4 {
+    margin: 0;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--primaryblue);
+}
+
+.finanzas-inputs {
+    display: flex;
+    flex-direction: row; /* Fuerza la fila horizontal */
+    gap: 10px;
+    align-items: center; /* Centra verticalmente */
+    margin-top: 10px;
+}
+
+/* Aseguramos que los inputs dentro de finanzas no sean gigantes */
+.finanzas-inputs input, 
+.finanzas-inputs select {
+    margin: 0 !important; /* Quita márgenes heredados */
+    height: 40px; /* Altura uniforme */
+}
+
+/* Estilo para los Selectores de Fecha */
+.finanzas-controles select {
+    padding: 10px 15px;
+    border: 2px solid #eee;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: bold;
+    color: #555;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.finanzas-controles select:hover,
+.finanzas-controles select:focus {
+    border-color: var(--primaryorange);
+    background-color: #fff;
+}
+
+/* Ajuste visual para el "VS" */
+.texto-vs {
+    font-weight: bold;
+    color: #ccc;
+    font-size: 0.9em;
+}

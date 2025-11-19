@@ -537,10 +537,9 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
     const { nuevoEstado } = req.body;
     const id_restaurante = req.session.restauranteId;
 
-    if (!['en proceso', 'completado', 'cancelado'].includes(nuevoEstado)) {
-        return res.status(400).json({ message: 'Estado no válido.' });
+    if (!['en proceso', 'completado', 'cancelado', 'inactivo'].includes(nuevoEstado)) {
+    return res.status(400).json({ message: 'Estado no válido.' });
     }
-
     // Iniciar transacción
     const connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -620,7 +619,25 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
             "UPDATE pedidos SET estado = ? WHERE id_pedido = ? AND id_restaurante = ?",
             [nuevoEstado, id, id_restaurante]
         );
-
+        if (nuevoEstado === 'inactivo') {
+            // 1. Obtener el monto del pedido
+            const [ped] = await connection.query(
+                "SELECT total_calculado, mesa FROM pedidos WHERE id_pedido = ?", 
+                [id]
+            );
+            
+            if (ped.length > 0) {
+                const monto = ped[0].total_calculado;
+                const descripcion = `Ingreso Pedido #${id} (${ped[0].mesa})`;
+                
+                // 2. Insertar en movimientos_financieros
+                await connection.query(
+                    `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
+                     VALUES (?, 'ingreso', ?, ?, NOW())`,
+                    [id_restaurante, monto, descripcion]
+                );
+            }
+        }
         // 7. Si todo salió bien, confirmamos la transacción
         await connection.commit();
         res.json({ message: `Pedido ${id} actualizado a ${nuevoEstado}. Stock validado y descontado.` });
@@ -860,6 +877,182 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Error al liberar mesa:', error);
         res.status(500).json({ message: 'Error al liberar la mesa.' });
+    }
+});
+// ==========================================
+// === API MÓVIL (CLIENTE) - LÓGICA "LATE BINDING" ===
+// ==========================================
+
+// 1. VER MENÚ (Totalmente público, no requiere mesa ni PIN aún)
+// La App solo necesita saber el ID del restaurante (en tu caso hardcodeado a 1 o enviado por param)
+app.get('/api/movil/menu', async (req, res) => {
+    try {
+        const id_restaurante = 1; // O recibirlo por query param ?id_restaurante=1
+        const [menu] = await pool.query(
+            `SELECT id_producto, nombre, descripcion, precio_venta, tipo 
+             FROM productos 
+             WHERE id_restaurante = ? AND estado = 'activo'`,
+            [id_restaurante]
+        );
+        res.json(menu);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error al cargar menú.' });
+    }
+});
+
+// 2. ENVIAR PEDIDO (Aquí es donde ocurre la MAGIA de la seguridad)
+app.post('/api/movil/pedido', async (req, res) => {
+    // Ahora el body recibe la autenticación JUNTO con los items
+    const { id_mesa, pin, items } = req.body; 
+    // items: [{id_producto, cantidad}]
+    
+    const id_restaurante = 1; // Default para este MVP
+
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+        // A. VALIDACIÓN DE SEGURIDAD (Mesa + PIN)
+        // Verificamos que la mesa exista, sea de este restaurante, esté OCUPADA y el PIN coincida
+        const [mesaCheck] = await connection.query(
+            `SELECT * FROM mesas 
+             WHERE id_mesa = ? AND id_restaurante = ? AND estado = 'ocupada' AND codigo_sesion = ?`,
+            [id_mesa, id_restaurante, pin]
+        );
+
+        if (mesaCheck.length === 0) {
+            await connection.rollback();
+            // Este mensaje le dirá al cliente que el PIN o la mesa están mal
+            return res.status(401).json({ message: 'PIN incorrecto o mesa no activa. Pide el PIN a tu mesero.' });
+        }
+
+        const nombre_mesa = mesaCheck[0].numero_mesa;
+
+        // B. CÁLCULO DE TOTAL (Precios reales de BD)
+        let total_calculado = 0;
+        const detallesInsertar = [];
+
+        for (const item of items) {
+            const [prod] = await connection.query(
+                'SELECT precio_venta FROM productos WHERE id_producto = ?', 
+                [item.id_producto]
+            );
+            
+            if (prod.length > 0) {
+                const precio = parseFloat(prod[0].precio_venta);
+                total_calculado += precio * item.cantidad;
+                detallesInsertar.push([null, item.id_producto, item.cantidad, precio]);
+            }
+        }
+
+        // C. CREAR EL PEDIDO
+        const [pedidoResult] = await connection.query(
+            `INSERT INTO pedidos (id_restaurante, mesa, responsable_pedido, total_calculado, estado, fecha_creacion)
+             VALUES (?, ?, 'App Cliente', ?, 'sin ver', NOW())`,
+            [id_restaurante, nombre_mesa, total_calculado]
+        );
+        
+        const id_pedido = pedidoResult.insertId;
+
+        // D. INSERTAR DETALLES
+        for (const det of detallesInsertar) {
+            // Asignamos el ID del pedido recién creado
+            det[0] = id_pedido; 
+            await connection.query(
+                `INSERT INTO pedido_detalles (id_pedido, id_producto, cantidad, precio_en_pedido) VALUES (?, ?, ?, ?)`,
+                det // [id_pedido, id_producto, cantidad, precio]
+            );
+        }
+
+        await connection.commit();
+        
+        // Respuesta exitosa
+        res.status(201).json({ 
+            message: '¡Pedido enviado a cocina!', 
+            id_pedido: id_pedido 
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Error en pedido móvil:', error);
+        res.status(500).json({ message: 'Error interno al procesar el pedido.' });
+    } finally {
+        connection.release();
+    }
+});
+app.get('/api/finanzas/resumen', requireAuth, requireOwner, async (req, res) => {
+    try {
+        // Agrupamos movimientos por fecha (solo año-mes-dia)
+        const [dias] = await pool.query(
+            `SELECT 
+                DATE(fecha) as fecha, 
+                SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END) as total_ingresos,
+                SUM(CASE WHEN tipo = 'egreso' THEN monto ELSE 0 END) as total_egresos,
+                COUNT(CASE WHEN tipo = 'ingreso' THEN 1 END) as num_ventas
+             FROM movimientos_financieros 
+             WHERE id_restaurante = ?
+             GROUP BY DATE(fecha)
+             ORDER BY fecha DESC`,
+            [req.session.restauranteId]
+        );
+        res.json(dias);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error al cargar finanzas.' });
+    }
+});
+
+// 2. GET Nómina Diaria (Cálculo virtual)
+app.get('/api/finanzas/nomina-diaria', requireAuth, requireOwner, async (req, res) => {
+    try {
+        // Sumamos sueldos de empleados activos y dividimos entre 30
+        const [result] = await pool.query(
+            `SELECT SUM(sueldo) as nomina_mensual FROM empleados 
+             WHERE id_restaurante = ? AND estado = 'activo'`,
+            [req.session.restauranteId]
+        );
+        
+        const mensual = result[0].nomina_mensual || 0;
+        const diario = parseFloat(mensual) / 30;
+        
+        res.json({ nomina_diaria: diario });
+    } catch (error) {
+        res.status(500).json({ message: 'Error al calcular nómina.' });
+    }
+});
+
+// 3. GET Detalle de un Día
+app.get('/api/finanzas/detalle/:fecha', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { fecha } = req.params; // Formato YYYY-MM-DD
+        const [movimientos] = await pool.query(
+            `SELECT * FROM movimientos_financieros 
+             WHERE id_restaurante = ? AND DATE(fecha) = ?
+             ORDER BY fecha DESC`,
+            [req.session.restauranteId, fecha]
+        );
+        res.json(movimientos);
+    } catch (error) {
+        res.status(500).json({ message: 'Error al cargar detalle.' });
+    }
+});
+
+// 4. POST Registrar Egreso Manual
+app.post('/api/finanzas/egreso', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { descripcion, monto } = req.body;
+        // Validación básica
+        if (!monto || parseFloat(monto) <= 0) return res.status(400).json({message: 'Monto inválido'});
+
+        await pool.query(
+            `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
+             VALUES (?, 'egreso', ?, ?, NOW())`,
+            [req.session.restauranteId, parseFloat(monto), descripcion]
+        );
+        res.status(201).json({ message: 'Egreso registrado.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error al guardar egreso.' });
     }
 });
 

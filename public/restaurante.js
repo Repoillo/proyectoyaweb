@@ -148,7 +148,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     cargarIngredientesCache();
 
-    // --- NAVEGACIÓN PRINCIPAL ---
     enlacesMenu.forEach(enlace => {
         enlace.addEventListener('click', (evento) => {
             evento.preventDefault();
@@ -165,15 +164,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const panelAMostrar = document.getElementById(enlace.dataset.target);
             if (panelAMostrar) {
                 panelAMostrar.classList.remove('oculto');
+                
+                // === AQUÍ ESTÁ EL CAMBIO IMPORTANTE ===
                 if (seccionActiva === 'pedidos_completados') {
                     cargarPedidosCompletados(); 
-                } else if (seccionActiva !== 'finanzas') {
+                } else if (seccionActiva === 'finanzas') {
+                     // ¡ESTA LÍNEA ES LA QUE FALTABA!
+                     cargarFinanzas(); 
+                } else {
                      cargarDatos(seccionActiva);
                 }
+                // ======================================
             }
         });
     });
-
     // --- LÓGICA DE SELECCIÓN DE FILAS ---
     document.querySelectorAll('.tablaDatos tbody').forEach(tbody => {
         tbody.addEventListener('click', (e) => {
@@ -459,22 +463,227 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GENERACIÓN DE QR ---
     btnExportarQR.addEventListener('click', () => {
         const canvas = document.getElementById('qrCanvas');
-        const urlRestaurante = window.location.origin + '/index.html'; // URL genérica de la app
         
+        // Payload para la App
+        const dataApp = JSON.stringify({
+            accion: 'cargar_menu',
+            id_restaurante: 1,
+            nombre: 'Restaurante YA'
+        });
+
         // Usamos la librería QRious
         const qr = new QRious({
             element: canvas,
-            value: urlRestaurante,
+            value: dataApp,
             size: 500,
             background: 'white',
-            foreground: 'black'
+            foreground: 'black',
+            level: 'H' // Alto nivel de corrección de errores
         });
 
-        // Crear enlace de descarga fantasma
+        // Crear enlace de descarga
         const link = document.createElement('a');
-        link.download = 'codigo-qr-restaurante.png';
+        link.download = 'QR-Restaurante-General.png';
         link.href = canvas.toDataURL();
         link.click();
     });
+    // ==========================================
+    // === LÓGICA DE FINANZAS (NUEVO BLOQUE) ===
+    // ==========================================
+    
+    const listaFinanzasDias = document.getElementById('listaFinanzasDias');
+    const modalDetalleFinanzas = document.getElementById('modalDetalleFinanzas');
+    const listaMovimientosDia = document.getElementById('listaMovimientosDia');
+    const formEgresoRapido = document.getElementById('formEgresoRapido');
+    const selectFechaA = document.getElementById('fechaA');
+    const selectFechaB = document.getElementById('fechaB');
+    const btnComparar = document.getElementById('btnComparar');
+    const resComparacion = document.getElementById('resultadoComparacion');
+    
+    let nominaDiariaGlobal = 0;
+    let datosFinanzasCache = []; // Para poder comparar sin recargar
 
+    // 1. Cargar Datos Generales
+    async function cargarFinanzas() {
+        try {
+            // A. Obtener Costo de Nómina Diaria
+            const resNomina = await fetch('/api/finanzas/nomina-diaria', { credentials: 'include' });
+            const dataNomina = await resNomina.json();
+            nominaDiariaGlobal = parseFloat(dataNomina.nomina_diaria);
+
+            // B. Obtener Resumen de Días
+            const res = await fetch('/api/finanzas/resumen', { credentials: 'include' });
+            const dias = await res.json();
+            datosFinanzasCache = dias; // Guardar para comparador
+
+            renderizarFinanzas(dias);
+            llenarSelectoresComparacion(dias);
+
+        } catch (error) {
+            console.error('Error cargando finanzas:', error);
+        }
+    }
+
+    // 2. Renderizar Tarjetas de Días
+    function renderizarFinanzas(dias) {
+        listaFinanzasDias.innerHTML = '';
+        modalDetalleFinanzas.classList.add('oculto');
+        listaFinanzasDias.classList.remove('oculto');
+
+        if (dias.length === 0) {
+            listaFinanzasDias.innerHTML = '<p>No hay registros financieros aún.</p>';
+            return;
+        }
+
+        dias.forEach(dia => {
+            const ingresos = parseFloat(dia.total_ingresos);
+            const egresosManuales = parseFloat(dia.total_egresos);
+            const numVentas = parseInt(dia.num_ventas);
+            
+            // Cálculo Clave: Egresos Totales = Manuales + Nómina Diaria
+            const egresosTotales = egresosManuales + nominaDiariaGlobal;
+            const utilidad = ingresos - egresosTotales;
+            
+            // Ticket Promedio
+            const ticketPromedio = numVentas > 0 ? (ingresos / numVentas).toFixed(2) : '0.00';
+
+            // Formato de Fecha Amigable
+            const fechaObj = new Date(dia.fecha);
+            const fechaStr = fechaObj.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+
+            // Crear Tarjeta
+            const card = document.createElement('div');
+            card.classList.add('pedido-item'); // Reusamos estilo
+            
+            // Color de borde según utilidad (Verde si gana, Rojo si pierde)
+            card.style.borderLeft = utilidad >= 0 ? '5px solid #2ecc71' : '5px solid #e74c3c';
+
+            card.innerHTML = `
+                <h3 style="text-transform:capitalize;">${fechaStr}</h3>
+                <div style="margin:15px 0;">
+                    <div style="font-size:0.9em; color:#777;">Ingresos</div>
+                    <div style="font-size:1.4em; font-weight:bold; color:#27ae60;">$${ingresos.toFixed(2)}</div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:0.85em; color:#555; border-top:1px solid #eee; padding-top:10px;">
+                    <span>Ticket Prom: <b>$${ticketPromedio}</b></span>
+                    <span>Utilidad: <b style="color:${utilidad >= 0 ? '#2980b9' : '#e74c3c'}">$${utilidad.toFixed(2)}</b></span>
+                </div>
+            `;
+            
+            card.onclick = () => verDetalleDia(dia.fecha, ingresos, egresosManuales, utilidad);
+            listaFinanzasDias.appendChild(card);
+        });
+    }
+
+    // 3. Ver Detalle (Modal)
+    async function verDetalleDia(fechaRaw, ingresos, egresosManuales, utilidad) {
+        listaFinanzasDias.classList.add('oculto');
+        modalDetalleFinanzas.classList.remove('oculto');
+        
+        // Convertir fecha YYYY-MM-DDT... a YYYY-MM-DD para la API
+        const fechaAPI = fechaRaw.split('T')[0]; 
+
+        document.getElementById('tituloDetalleFinanzas').textContent = `Detalle del ${fechaAPI}`;
+        document.getElementById('detIngresos').textContent = `$${ingresos.toFixed(2)}`;
+        document.getElementById('detEgresos').textContent = `$${(egresosManuales + nominaDiariaGlobal).toFixed(2)}`;
+        document.getElementById('detUtilidad').textContent = `$${utilidad.toFixed(2)}`;
+
+        listaMovimientosDia.innerHTML = '<p>Cargando movimientos...</p>';
+
+        try {
+            const res = await fetch(`/api/finanzas/detalle/${fechaAPI}`, { credentials: 'include' });
+            const movimientos = await res.json();
+            
+            listaMovimientosDia.innerHTML = '';
+            
+            // A. Insertar Nómina como primer gasto (Virtual)
+            const liNomina = document.createElement('li');
+            liNomina.style.borderLeft = '4px solid #e74c3c';
+            liNomina.innerHTML = `<span>Nómina Diaria (Prorrateada)</span> <span style="color:#e74c3c;">-$${nominaDiariaGlobal.toFixed(2)}</span>`;
+            listaMovimientosDia.appendChild(liNomina);
+
+            // B. Listar Movimientos Reales
+            movimientos.forEach(mov => {
+                const li = document.createElement('li');
+                const esIngreso = mov.tipo === 'ingreso';
+                li.style.borderLeft = esIngreso ? '4px solid #2ecc71' : '4px solid #e74c3c';
+                
+                li.innerHTML = `
+                    <span>${mov.descripcion}</span> 
+                    <span style="color:${esIngreso ? '#27ae60' : '#e74c3c'}; font-weight:bold;">
+                        ${esIngreso ? '+' : '-'}$${parseFloat(mov.monto).toFixed(2)}
+                    </span>`;
+                listaMovimientosDia.appendChild(li);
+            });
+
+        } catch (error) {
+            console.error(error);
+            listaMovimientosDia.innerHTML = '<p>Error cargando detalles.</p>';
+        }
+    }
+
+    document.getElementById('btnCerrarFinanzas').addEventListener('click', () => {
+        modalDetalleFinanzas.classList.add('oculto');
+        listaFinanzasDias.classList.remove('oculto');
+    });
+
+    // 4. Registro de Gasto Manual
+    formEgresoRapido.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const descripcion = document.getElementById('descEgreso').value;
+        const monto = document.getElementById('montoEgreso').value;
+
+        try {
+            const res = await fetch('/api/finanzas/egreso', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'include',
+                body: JSON.stringify({ descripcion, monto })
+            });
+            if(res.ok) {
+                formEgresoRapido.reset();
+                alert('Gasto registrado');
+                cargarFinanzas(); // Recargar para ver el impacto inmediato
+            }
+        } catch(e) { console.error(e); }
+    });
+
+    // 5. Lógica de Comparación
+    function llenarSelectoresComparacion(dias) {
+        const opts = dias.map(d => `<option value="${d.fecha}">${new Date(d.fecha).toLocaleDateString()}</option>`).join('');
+        selectFechaA.innerHTML = opts;
+        selectFechaB.innerHTML = opts;
+    }
+
+    btnComparar.addEventListener('click', () => {
+        const fechaA = selectFechaA.value;
+        const fechaB = selectFechaB.value;
+        
+        const diaA = datosFinanzasCache.find(d => d.fecha === fechaA);
+        const diaB = datosFinanzasCache.find(d => d.fecha === fechaB);
+
+        if(!diaA || !diaB) return;
+
+        // Usamos la utilidad neta para comparar (Ingresos - Egresos - Nomina)
+        const utilidadA = parseFloat(diaA.total_ingresos) - (parseFloat(diaA.total_egresos) + nominaDiariaGlobal);
+        const utilidadB = parseFloat(diaB.total_ingresos) - (parseFloat(diaB.total_egresos) + nominaDiariaGlobal);
+
+        let diffPorcentaje = 0;
+        if (utilidadA !== 0) {
+            diffPorcentaje = ((utilidadB - utilidadA) / Math.abs(utilidadA)) * 100;
+        }
+
+        const mejorPeor = diffPorcentaje > 0 ? 'MEJOR' : 'PEOR';
+        const color = diffPorcentaje > 0 ? '#27ae60' : '#c0392b';
+        const icono = diffPorcentaje > 0 ? '📈' : '📉';
+
+        resComparacion.classList.remove('oculto');
+        resComparacion.style.color = color;
+        resComparacion.innerHTML = `
+            ${icono} El día seleccionado (B) fue un 
+            <span style="font-size:1.2em;">${Math.abs(diffPorcentaje).toFixed(1)}% ${mejorPeor}</span> 
+            que el día base (A).
+            <br><small style="color:#555; font-weight:normal;">(Comparando Utilidad Neta)</small>
+        `;
+    });
 });
