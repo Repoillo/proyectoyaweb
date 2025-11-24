@@ -40,54 +40,78 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderizarMesas(mesas) {
         listaMesas.innerHTML = '';
         if (mesas.length === 0) {
-            listaMesas.innerHTML = '<p>No hay mesas configuradas. Pide al dueño que agregue mesas en el panel.</p>';
+            listaMesas.innerHTML = '<p>No hay mesas configuradas.</p>';
             return;
         }
 
         mesas.forEach(mesa => {
             const esOcupada = mesa.estado === 'ocupada';
             const card = document.createElement('div');
-            card.classList.add('pedido-item'); // Reusamos estilo de tarjeta
+            card.classList.add('pedido-item'); 
             
-            // Estilo condicional: Verde (libre) o Rojo (ocupada)
-            card.style.borderLeft = esOcupada ? '8px solid #e74c3c' : '8px solid #2ecc71';
-            card.style.display = 'flex';
-            card.style.flexDirection = 'column';
-            card.style.justifyContent = 'space-between';
-            
-            let contenidoHTML = `
-                <h3 style="font-size: 1.5em; margin-bottom: 5px;">${mesa.numero_mesa}</h3>
-                <p style="color: ${esOcupada ? '#e74c3c' : '#2ecc71'}; font-weight: bold; font-size: 1.1em;">
-                    ${esOcupada ? 'OCUPADA' : 'LIBRE'}
-                </p>
-            `;
+            // LÓGICA DE ICONOS DE ESTADO
+            let iconoEstadoHTML = '';
+            let claseAnimacion = '';
 
             if (esOcupada) {
-                contenidoHTML += `
-                    <div style="background: #f9f9f9; padding: 10px; border-radius: 5px; margin: 15px 0;">
-                        <span style="display:block; font-size: 0.8em; color: #666;">Código Sesión:</span>
-                        <span style="font-size: 2em; font-weight: bold; color: #333; letter-spacing: 2px;">${mesa.codigo_sesion}</span>
+                // 1. ¿Pidieron la cuenta?
+                if (mesa.estado_pedido === 'por_pagar') {
+                    claseAnimacion = 'parpadeo'; // CSS que agregaremos abajo
+                    if (mesa.metodo_pago === 'tarjeta') {
+                        iconoEstadoHTML = `<div class="icono-estado tarjeta"><ion-icon name="card-outline"></ion-icon> TARJETA</div>`;
+                    } else {
+                        iconoEstadoHTML = `<div class="icono-estado efectivo"><ion-icon name="cash-outline"></ion-icon> EFECTIVO</div>`;
+                    }
+                } 
+                // 2. ¿Ya está completado (comieron) pero no han pedido cuenta?
+                else if (mesa.estado_pedido === 'completado') {
+                    // Aquí podrías poner la palomita si quieres indicar que ya se sirvió todo
+                    iconoEstadoHTML = `<div class="icono-estado ok"><ion-icon name="checkmark-circle-outline"></ion-icon> SERVIDO</div>`;
+                }
+                // 3. Estado normal (Esperando o Comiendo)
+                else {
+                    iconoEstadoHTML = `<div class="icono-estado reloj"><ion-icon name="time-outline"></ion-icon> EN CURSO</div>`;
+                }
+            }
+
+            // Bordes de color
+            let colorBorde = '#2ecc71'; // Verde (Libre)
+            if (esOcupada) {
+                if (mesa.estado_pedido === 'por_pagar') colorBorde = '#f39c12'; // Naranja (Atención)
+                else colorBorde = '#e74c3c'; // Rojo (Ocupada normal)
+            }
+
+            card.style.borderLeft = `8px solid ${colorBorde}`;
+            if (claseAnimacion) card.classList.add(claseAnimacion);
+
+            card.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size: 1.5em; margin:0;">${mesa.numero_mesa}</h3>
+                    ${esOcupada ? iconoEstadoHTML : ''}
+                </div>
+                
+                <p style="color: ${esOcupada ? '#555' : '#2ecc71'}; font-weight: bold; margin-top:10px;">
+                    ${esOcupada ? 'OCUPADA' : 'LIBRE'}
+                </p>
+
+                ${esOcupada ? `
+                    <div style="background: #f9f9f9; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                        <span style="display:block; font-size: 0.8em; color: #666;">PIN Cliente:</span>
+                        <span style="font-size: 1.5em; font-weight: bold; color: #333; letter-spacing: 2px;">${mesa.codigo_sesion}</span>
                     </div>
                     <button class="boton botonEliminar btnLiberar" data-id="${mesa.id_mesa}" style="width: 100%; padding: 15px;">
-                        <ion-icon name="lock-open-outline"></ion-icon> Liberar Mesa
+                        <ion-icon name="lock-open-outline"></ion-icon> Liberar & Cerrar
                     </button>
-                `;
-            } else {
-                contenidoHTML += `
-                    <div style="margin: 15px 0; color: #ccc; font-style: italic;">
-                        Sin código activo
-                    </div>
+                ` : `
+                    <div style="margin: 15px 0; color: #ccc; font-style: italic;">Sin clientes</div>
                     <button class="boton botonAgregar btnOcupar" data-id="${mesa.id_mesa}" style="width: 100%; padding: 15px;">
                         <ion-icon name="key-outline"></ion-icon> Ocupar Mesa
                     </button>
-                `;
-            }
-
-            card.innerHTML = contenidoHTML;
+                `}
+            `;
             listaMesas.appendChild(card);
         });
     }
-
     // --- Eventos ---
     listaMesas.addEventListener('click', async (e) => {
         // Usamos closest para asegurar que detecte el clic aunque le den al icono

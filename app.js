@@ -798,10 +798,20 @@ app.get('/api/pedidos/cocina/detalles/:id_pedido', requireAuth, async (req, res)
         res.status(500).json({message: 'Error al cargar los detalles.'});
     }
 });
+// MODIFICACIÓN: GET Mesas enriquecido con estado del pedido
 app.get('/api/mesas', requireAuth, async (req, res) => {
     try {
         const [mesas] = await pool.query(
-            "SELECT * FROM mesas WHERE id_restaurante = ? ORDER BY id_mesa ASC",
+            `SELECT 
+                m.*, 
+                p.estado AS estado_pedido,
+                p.metodo_pago
+             FROM mesas m
+             LEFT JOIN pedidos p ON m.numero_mesa = p.mesa 
+                 AND p.id_restaurante = m.id_restaurante
+                 AND p.estado NOT IN ('inactivo', 'archivado', 'cancelado')
+             WHERE m.id_restaurante = ? 
+             ORDER BY m.id_mesa ASC`,
             [req.session.restauranteId]
         );
         res.json(mesas);
