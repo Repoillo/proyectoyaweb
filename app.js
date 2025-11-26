@@ -911,35 +911,28 @@ app.get('/api/movil/menu', async (req, res) => {
     }
 });
 
-// 2. ENVIAR PEDIDO (Aquí es donde ocurre la MAGIA de la seguridad)
+// 2. ENVIAR PEDIDO (Corregido: Busca por numero_mesa)
 app.post('/api/movil/pedido', async (req, res) => {
-    // Ahora el body recibe la autenticación JUNTO con los items
-    const { id_mesa, pin, items } = req.body; 
-    // items: [{id_producto, cantidad}]
-    
-    const id_restaurante = 1; // Default para este MVP
+    const { numero_mesa, pin, items } = req.body; 
+    const id_restaurante = 1; 
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-        // A. VALIDACIÓN DE SEGURIDAD (Mesa + PIN)
-        // Verificamos que la mesa exista, sea de este restaurante, esté OCUPADA y el PIN coincida
+        // A. VALIDACIÓN: Usamos 'numero_mesa' en el WHERE en lugar de 'id_mesa'
         const [mesaCheck] = await connection.query(
             `SELECT * FROM mesas 
-             WHERE id_mesa = ? AND id_restaurante = ? AND estado = 'ocupada' AND codigo_sesion = ?`,
-            [id_mesa, id_restaurante, pin]
+             WHERE numero_mesa = ? AND id_restaurante = ? AND estado = 'ocupada' AND codigo_sesion = ?`,
+            [numero_mesa, id_restaurante, pin]
         );
 
         if (mesaCheck.length === 0) {
             await connection.rollback();
-            // Este mensaje le dirá al cliente que el PIN o la mesa están mal
-            return res.status(401).json({ message: 'PIN incorrecto o mesa no activa. Pide el PIN a tu mesero.' });
+            return res.status(401).json({ message: 'Mesa o PIN incorrectos.' });
         }
 
-        const nombre_mesa = mesaCheck[0].numero_mesa;
-
-        // B. CÁLCULO DE TOTAL (Precios reales de BD)
+        // B. CÁLCULO TOTAL
         let total_calculado = 0;
         const detallesInsertar = [];
 
@@ -948,7 +941,6 @@ app.post('/api/movil/pedido', async (req, res) => {
                 'SELECT precio_venta FROM productos WHERE id_producto = ?', 
                 [item.id_producto]
             );
-            
             if (prod.length > 0) {
                 const precio = parseFloat(prod[0].precio_venta);
                 total_calculado += precio * item.cantidad;
@@ -956,37 +948,31 @@ app.post('/api/movil/pedido', async (req, res) => {
             }
         }
 
-        // C. CREAR EL PEDIDO
+        // C. CREAR PEDIDO
         const [pedidoResult] = await connection.query(
             `INSERT INTO pedidos (id_restaurante, mesa, responsable_pedido, total_calculado, estado, fecha_creacion)
              VALUES (?, ?, 'App Cliente', ?, 'sin ver', NOW())`,
-            [id_restaurante, nombre_mesa, total_calculado]
+            [id_restaurante, numero_mesa, total_calculado] // Guardamos el número de mesa directo
         );
         
         const id_pedido = pedidoResult.insertId;
 
         // D. INSERTAR DETALLES
         for (const det of detallesInsertar) {
-            // Asignamos el ID del pedido recién creado
             det[0] = id_pedido; 
             await connection.query(
-                `INSERT INTO pedido_detalles (id_pedido, id_producto, cantidad, precio_en_pedido) VALUES (?, ?, ?, ?)`,
-                det // [id_pedido, id_producto, cantidad, precio]
+                `INSERT INTO pedido_detalles (id_pedido, id_producto, cantidad, precio_en_pedido) VALUES ?`,
+                [[det]]
             );
         }
 
         await connection.commit();
-        
-        // Respuesta exitosa
-        res.status(201).json({ 
-            message: '¡Pedido enviado a cocina!', 
-            id_pedido: id_pedido 
-        });
+        res.status(201).json({ message: 'Pedido enviado.', id_pedido });
 
     } catch (error) {
         await connection.rollback();
-        console.error('Error en pedido móvil:', error);
-        res.status(500).json({ message: 'Error interno al procesar el pedido.' });
+        console.error(error);
+        res.status(500).json({ message: 'Error al procesar pedido.' });
     } finally {
         connection.release();
     }
