@@ -435,18 +435,74 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e){ console.error(e); }
     }
 
+   // --- FUNCIÓN CORREGIDA Y COMPLETA ---
     async function mostrarDetallePedido(id) {
-         // (Copiar lógica de tu archivo anterior)
-         listaPedidosCompletados.classList.add('oculto');
-         detallePedidoCompletado.classList.remove('oculto');
-         // Fetch detalle...
+         const listaPrincipal = document.getElementById('listaPedidosCompletados');
+         const panelDetalle = document.getElementById('detallePedidoCompletado');
+         
+         // 1. Cambiar visibilidad
+         listaPrincipal.classList.add('oculto');
+         panelDetalle.classList.remove('oculto');
+         
+         // Limpiar datos previos
+         document.getElementById('detallePedidoTitulo').textContent = 'Cargando...';
+         document.getElementById('detalleProductosLista').innerHTML = '';
+         document.getElementById('detalleIngredientesLista').innerHTML = '';
+
          try {
             const res = await fetch(`/api/pedidos/completados/${id}`, {credentials: 'include'});
+            
+            if (!res.ok) throw new Error('Error al cargar detalle');
+
             const data = await res.json();
-            document.getElementById('detallePedidoTitulo').textContent = `Pedido ${data.info.mesa}`;
-            document.getElementById('detallePedidoTotal').textContent = `$${data.info.total_calculado}`;
-            // ... rellenar listas ...
-         } catch(e) {}
+
+            // 2. Rellenar Información Encabezado
+            document.getElementById('detallePedidoTitulo').textContent = `Detalle del Pedido: ${data.info.mesa}`;
+            document.getElementById('detallePedidoTotal').innerHTML = `
+                Total Cobrado: <b>$${parseFloat(data.info.total_calculado).toFixed(2)}</b><br>
+                <small>Fecha: ${new Date(data.info.fecha_creacion).toLocaleString()}</small>
+            `;
+
+            // 3. Rellenar Lista de Productos
+            const listaProd = document.getElementById('detalleProductosLista');
+            if (data.productos.length === 0) {
+                listaProd.innerHTML = '<li>Sin productos registrados</li>';
+            } else {
+                data.productos.forEach(prod => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <span>${prod.cantidad}x ${prod.nombre}</span>
+                        <span>$${prod.precio_en_pedido} c/u</span>
+                    `;
+                    listaProd.appendChild(li);
+                });
+            }
+
+            // 4. Rellenar Lista de Ingredientes (Cálculo de Merma)
+            const listaIng = document.getElementById('detalleIngredientesLista');
+            if (data.ingredientes.length === 0) {
+                listaIng.innerHTML = '<li style="color:#888">No se descontaron ingredientes (¿Sin receta?)</li>';
+            } else {
+                data.ingredientes.forEach(ing => {
+                    const li = document.createElement('li');
+                    // Estilo diferente para resaltar que es gasto de inventario
+                    li.style.borderLeft = "3px solid #e74c3c"; 
+                    li.style.backgroundColor = "#fff5f5";
+                    li.innerHTML = `
+                        <b>${ing.nombre}</b>
+                        <span style="color:#c0392b">-${parseFloat(ing.total_gastado).toFixed(2)} ${ing.unidad_medida}</span>
+                    `;
+                    listaIng.appendChild(li);
+                });
+            }
+
+         } catch(e) {
+             console.error(e);
+             alert('No se pudo cargar el detalle del pedido.');
+             // Volver atrás si falla
+             panelDetalle.classList.add('oculto');
+             listaPrincipal.classList.remove('oculto');
+         }
     }
 
     btnVolverALista.addEventListener('click', () => {
