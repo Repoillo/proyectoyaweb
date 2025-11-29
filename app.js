@@ -537,8 +537,8 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
     const { nuevoEstado } = req.body;
     const id_restaurante = req.session.restauranteId;
 
-    if (!['en proceso', 'completado', 'cancelado', 'inactivo'].includes(nuevoEstado)) {
-    return res.status(400).json({ message: 'Estado no válido.' });
+    if (!['en proceso', 'completado', 'cancelado', 'inactivo', 'por_pagar'].includes(nuevoEstado)) {
+        return res.status(400).json({ message: 'Estado no válido.' });
     }
     // Iniciar transacción
     const connection = await pool.getConnection();
@@ -949,8 +949,12 @@ app.get('/api/movil/menu', async (req, res) => {
 
 // 2. ENVIAR PEDIDO (Corregido: Busca por numero_mesa)
 app.post('/api/movil/pedido', async (req, res) => {
-    const { numero_mesa, pin, items } = req.body; 
+    let { numero_mesa, pin, items } = req.body; // Usamos let para poder modificarlo
     const id_restaurante = 1; 
+
+    if (!numero_mesa.toString().toLowerCase().startsWith('mesa')) {
+        numero_mesa = `Mesa ${numero_mesa}`;
+    }
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -1087,6 +1091,39 @@ app.post('/api/finanzas/egreso', requireAuth, requireOwner, async (req, res) => 
         res.status(500).json({ message: 'Error al guardar egreso.' });
     }
 });
+// --- EN app.js ---
 
+// 3. PEDIR CUENTA (Cliente solicita pagar)
+app.post('/api/movil/cuenta', async (req, res) => {
+    const { numero_mesa, metodo_pago } = req.body; 
+    const id_restaurante = 1; // Hardcodeado por ahora
+
+    // Intentamos normalizar el nombre de la mesa (si envían "1", buscamos "Mesa 1")
+    // Esto previene el Error #2 que te explico abajo
+    const nombreMesa = numero_mesa.toString().toLowerCase().startsWith('mesa') 
+        ? numero_mesa 
+        : `Mesa ${numero_mesa}`;
+
+    try {
+        // Actualizamos el pedido activo de esa mesa a 'por_pagar'
+        const [result] = await pool.query(
+            `UPDATE pedidos 
+             SET estado = 'por_pagar', 
+                 metodo_pago = ? 
+             WHERE mesa = ? AND id_restaurante = ? AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+            [metodo_pago, nombreMesa, id_restaurante]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'No hay pedido activo para esta mesa.' });
+        }
+
+        res.json({ message: 'Cuenta solicitada al mesero.' });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error al solicitar cuenta.' });
+    }
+});
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
