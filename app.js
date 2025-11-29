@@ -652,19 +652,55 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
         connection.release();
     }
 });
-app.get('/api/pedidos/completados', requireAuth, requireOwner, async (req, res) => {
+app.get('/api/pedidos/completados/:id', requireAuth, requireOwner, async (req, res) => {
     try {
-        // CAMBIO: Ahora buscamos 'inactivo' porque esos son los que ya pagaron y se fueron
-        const [pedidosCompletados] = await pool.query(
+        const { id } = req.params;
+        const id_restaurante = req.session.restauranteId;
+
+        // 1. Obtener información básica del pedido
+        // CORRECCIÓN: Permitimos 'completado' O 'inactivo' (pagado)
+        const [pedidoInfo] = await pool.query(
             `SELECT * FROM pedidos 
-             WHERE id_restaurante = ? AND estado = 'inactivo'
-             ORDER BY fecha_creacion DESC`,
-            [req.session.restauranteId]
+             WHERE id_pedido = ? AND id_restaurante = ? AND (estado = 'completado' OR estado = 'inactivo')`,
+            [id, id_restaurante]
         );
-        res.json(pedidosCompletados);
-    } catch(error) {
-        console.error('Error al obtener historial de pedidos:', error);
-        res.status(500).json({message: 'Error al cargar el historial.'});
+
+        if (pedidoInfo.length === 0) {
+            return res.status(404).json({ message: 'Pedido no encontrado.' });
+        }
+
+        // 2. Obtener los productos (Igual que antes)
+        const [productosDelPedido] = await pool.query(
+            `SELECT p.nombre, pd.cantidad, pd.precio_en_pedido 
+             FROM pedido_detalles pd
+             JOIN productos p ON pd.id_producto = p.id_producto
+             WHERE pd.id_pedido = ?`,
+            [id]
+        );
+
+        // 3. Obtener ingredientes gastados (Igual que antes)
+        const [ingredientesGastados] = await pool.query(
+            `SELECT 
+                i.nombre, 
+                i.unidad_medida, 
+                SUM(r.cantidad_usada * pd.cantidad) AS total_gastado
+             FROM pedido_detalles pd
+             JOIN recetas r ON pd.id_producto = r.id_producto
+             JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+             WHERE pd.id_pedido = ?
+             GROUP BY i.id_ingrediente, i.nombre, i.unidad_medida`,
+            [id]
+        );
+
+        res.json({
+            info: pedidoInfo[0],
+            productos: productosDelPedido,
+            ingredientes: ingredientesGastados
+        });
+
+    } catch (error) {
+        console.error('Error al obtener detalle:', error);
+        res.status(500).json({ message: 'Error al cargar detalles.' });
     }
 });
 // GET /api/pedidos/completados/:id (NUEVA RUTA PARA DETALLES)
