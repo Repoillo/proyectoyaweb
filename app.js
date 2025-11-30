@@ -66,13 +66,50 @@ function requireOwner(req, res, next) {
     }
     res.status(403).json({ message: 'Acceso prohibido. Requiere permisos de administrador.' });
 }
+//gatekeeper
+app.post('/api/auth/verify-code', async (req, res) => {
+    const { codigo } = req.body;
+    try {
+        const [rows] = await pool.query(
+            "SELECT id_restaurante, nombre_restaurante FROM restaurante WHERE codigo_acceso = ?", 
+            [codigo]
+        );
 
-// === Rutas de Autenticación ===
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Código no válido.' });
+        }
+
+        req.session.restauranteContexto = rows[0].id_restaurante;
+        req.session.nombreRestauranteContexto = rows[0].nombre_restaurante;
+
+        res.json({ 
+            valid: true, 
+            nombre: rows[0].nombre_restaurante 
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error al verificar código.' });
+    }
+});
 app.post('/api/auth/register', async (req, res) => {
-    const { nombre_usuario, correo_usuario, contra, rol } = req.body; // Recibimos 'rol'
-    const id_restaurante_principal = 1; 
+    const { nombre_usuario, correo_usuario, contra, rol } = req.body;
+    
+    const id_restaurante = req.session.restauranteContexto;
 
-    // Validar que el rol sea válido (solo permitimos crear staff operativo)
+    if (!id_restaurante) {
+        return res.status(403).json({ message: 'Primero debes ingresar el código del restaurante.' });
+    }
+
+    const nombreRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
+    if (!nombreRegex.test(nombre_usuario)) {
+        return res.status(400).json({ message: 'El nombre solo puede contener letras.' });
+    }
+
+    if (contra.length < 6) {
+        return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres.' });
+    }
+
     const rolesPermitidos = ['cocinero', 'mesero'];
     const rolFinal = rolesPermitidos.includes(rol) ? rol : 'cocinero';
 
@@ -82,10 +119,10 @@ app.post('/api/auth/register', async (req, res) => {
         await pool.query(
             `INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, id_restaurante, rol) 
              VALUES (?, ?, ?, ?, ?)`,
-            [nombre_usuario, correo_usuario, contra_hash, id_restaurante_principal, rolFinal]
+            [nombre_usuario, correo_usuario, contra_hash, id_restaurante, rolFinal]
         );
         
-        res.status(201).json({ message: `${rolFinal.charAt(0).toUpperCase() + rolFinal.slice(1)} registrado exitosamente.` });
+        res.status(201).json({ message: 'Registrado exitosamente en el restaurante actual.' });
 
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY' && error.message.includes('correo_usuario')) {
@@ -95,7 +132,41 @@ app.post('/api/auth/register', async (req, res) => {
         res.status(500).json({ message: 'Error interno al registrar.' });
     }
 });
+app.post('/api/auth/login', async (req, res) => {
+    const { correo_usuario, contra } = req.body;
+    
+    const id_contexto = req.session.restauranteContexto;
 
+    if (!id_contexto) {
+        return res.status(403).json({ message: 'Sesión expirada. Ingresa el código del restaurante nuevamente.' });
+    }
+
+    try {
+        const [results] = await pool.query(
+            "SELECT * FROM m_usuarios WHERE correo_usuario = ? AND id_restaurante = ? AND estado = 'activo'", 
+            [correo_usuario, id_contexto]
+        );
+
+        if (results.length === 0) {
+            return res.status(401).json({ message: 'Usuario no encontrado en este restaurante.' });
+        }
+        
+        const usuario = results[0];
+        const esCorrecta = await bcrypt.compare(contra, usuario.contra_hash);
+        if (!esCorrecta) return res.status(401).json({ message: 'Credenciales incorrectas.' });
+
+        req.session.userId = usuario.id_usuario;
+        req.session.restauranteId = usuario.id_restaurante; 
+        req.session.nombreUsuario = usuario.nombre_usuario;
+        req.session.rol = usuario.rol; 
+
+        res.json({ message: 'Inicio de sesión exitoso', rol: usuario.rol });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error interno.' });
+    }
+});
 app.post('/api/auth/login', async (req, res) => {
     const { correo_usuario, contra } = req.body;
     try {
@@ -652,13 +723,28 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
         connection.release();
     }
 });
+
+app.get('/api/pedidos/completados', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [pedidos] = await pool.query(
+            `SELECT * FROM pedidos 
+             WHERE id_restaurante = ? 
+             AND (estado = 'completado' OR estado = 'inactivo')
+             ORDER BY fecha_creacion DESC 
+             LIMIT 50`,
+            [req.session.restauranteId]
+        );
+        res.json(pedidos);
+    } catch(error) {
+        console.error('Error al historial:', error);
+        res.status(500).json({message: 'Error al cargar historial.'});
+    }
+});
 app.get('/api/pedidos/completados/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
         const id_restaurante = req.session.restauranteId;
 
-        // 1. Obtener información básica del pedido
-        // CORRECCIÓN: Permitimos 'completado' O 'inactivo' (pagado)
         const [pedidoInfo] = await pool.query(
             `SELECT * FROM pedidos 
              WHERE id_pedido = ? AND id_restaurante = ? AND (estado = 'completado' OR estado = 'inactivo')`,
@@ -1124,6 +1210,65 @@ app.post('/api/movil/cuenta', async (req, res) => {
         console.error(error);
         res.status(500).json({ message: 'Error al solicitar cuenta.' });
     }
+});
+// 1. CONFIGURAR GASTOS FIJOS (Guardar lo que siempre se cobra)
+app.post('/api/finanzas/gastos-fijos', requireAuth, async (req, res) => {
+    const { concepto, monto } = req.body;
+    try {
+        await pool.query(
+            "INSERT INTO config_gastos_diarios (id_restaurante, concepto, monto) VALUES (?, ?, ?)",
+            [req.session.restauranteId, concepto, monto]
+        );
+        res.json({ message: 'Gasto fijo agregado.' });
+    } catch (e) { res.status(500).json({ message: 'Error.' }); }
+});
+
+app.get('/api/finanzas/gastos-fijos', requireAuth, async (req, res) => {
+    const [rows] = await pool.query("SELECT * FROM config_gastos_diarios WHERE id_restaurante = ?", [req.session.restauranteId]);
+    res.json(rows);
+});
+
+app.delete('/api/finanzas/gastos-fijos/:id', requireAuth, async (req, res) => {
+    await pool.query("DELETE FROM config_gastos_diarios WHERE id_gasto_fijo = ?", [req.params.id]);
+    res.json({ message: 'Borrado.' });
+});
+
+// 2. OBTENER RESUMEN DEL DÍA (Con Sueldos y Gastos Fijos Automáticos)
+app.get('/api/finanzas/dia', requireAuth, async (req, res) => {
+    const { fecha } = req.query; // Formato YYYY-MM-DD
+    const id_rest = req.session.restauranteId;
+
+    try {
+        // A. Ingresos Reales (Pedidos pagados ese día)
+        const [ingresos] = await pool.query(`
+            SELECT COALESCE(SUM(total_calculado), 0) as total 
+            FROM pedidos 
+            WHERE id_restaurante = ? AND estado = 'pagado' AND DATE(fecha_creacion) = ?`, 
+            [id_rest, fecha]
+        );
+
+        // B. Gastos Manuales (Los extras que registraste ese día específico)
+        const [gastosManuales] = await pool.query(`
+            SELECT COALESCE(SUM(monto), 0) as total 
+            FROM transacciones 
+            WHERE id_restaurante = ? AND tipo = 'egreso' AND DATE(fecha) = ?`,
+            [id_rest, fecha]
+        );
+
+        // C. Gastos Fijos (Renta, etc. - Se suman SIEMPRE)
+        const [fijos] = await pool.query(`SELECT COALESCE(SUM(monto), 0) as total FROM config_gastos_diarios WHERE id_restaurante = ?`, [id_rest]);
+
+        // D. Sueldos (Cálculo diario simple: Suma de salarios activos / 30 días)
+        const [nomina] = await pool.query(`SELECT COALESCE(SUM(salario_mensual), 0) as total FROM empleados WHERE id_restaurante = ?`, [id_rest]);
+        const sueldosDiarios = nomina[0].total / 30;
+
+        res.json({
+            ingresos: parseFloat(ingresos[0].total),
+            gastos_extra: parseFloat(gastosManuales[0].total),
+            gastos_fijos: parseFloat(fijos[0].total),
+            sueldos: sueldosDiarios
+        });
+    } catch (e) { console.error(e); res.status(500).json({message: 'Error al calcular día'}); }
 });
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));

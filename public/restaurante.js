@@ -86,28 +86,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (seccion === 'ingredientes') {
                     itemId = item.id_ing;
                     
-                    let infoCosto = '-';
-                    let infoStock = '-';
+                    let envasesEnteros = 0;
+                    let totalNeto = '';
 
-                    if(item.cantidad_por_unidad > 1) {
-                        const costoEnvase = (parseFloat(item.costo_ing) * parseFloat(item.cantidad_por_unidad)).toFixed(2);
-                        const piezasRestantes = (parseFloat(item.cantidad_disponible) / parseFloat(item.cantidad_por_unidad)).toFixed(1);
-                        
-                        infoCosto = `$${costoEnvase} <small style="color:#777">(por envase)</small>`;
-                        infoStock = `${piezasRestantes} pzas`; 
-                    } else {
-                        infoCosto = `$${parseFloat(item.costo_ing).toFixed(2)} /${item.unidad_medida}`;
-                        infoStock = `${parseFloat(item.cantidad_disponible).toFixed(2)} ${item.unidad_medida}`;
+                    if(parseFloat(item.cantidad_por_unidad) > 0) {
+                        envasesEnteros = Math.floor(parseFloat(item.cantidad_disponible) / parseFloat(item.cantidad_por_unidad));
                     }
 
+                    totalNeto = `${parseFloat(item.cantidad_disponible).toFixed(2)} ${item.unidad_medida}`;
+                    const stockVisual = item.cantidad_por_unidad > 1 
+                        ? `${envasesEnteros} pzas cerradas` 
+                        : `${parseFloat(item.cantidad_disponible).toFixed(0)} pzas`;
+
                     fila.dataset.ingredientesData = JSON.stringify(item);
-                     innerHTML = `
+                    
+                    innerHTML = `
                         <td style="font-weight:500">${item.nombre_ing}</td>
                         <td>${item.unidad_medida}</td>
-                        <td>${infoCosto}</td>
-                        <td style="font-weight:bold; color: var(--primaryblue);">${infoStock}</td>`;
-
-                } else if (seccion === 'empleados') {
+                        <td style="color:#555;">${totalNeto}</td>
+                        <td style="font-weight:bold; color: var(--primaryblue);">${stockVisual}</td>`;
+                }else if (seccion === 'empleados') {
                     itemId = item.id_empleado;
                     fila.dataset.empleadosData = JSON.stringify(item);
                      innerHTML = `
@@ -296,42 +294,84 @@ document.addEventListener('DOMContentLoaded', () => {
                     <option value="bebida" ${datos.tipo === 'bebida' ? 'selected' : ''}>Bebida</option>
                     <option value="postre" ${datos.tipo === 'postre' ? 'selected' : ''}>Postre</option>
                 </select>
-                <hr><h3>Receta</h3><div id="contenedorReceta"></div>
-                <button type="button" class="boton" id="btnAnadirIngrediente">+ Añadir Ingrediente</button>
+                
+                <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+                
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h3 style="margin:0; font-size:1.1em; color:var(--primaryblue);">Receta</h3>
+                    <button type="button" class="boton" id="btnAnadirIngrediente" style="padding: 5px 10px; font-size: 0.85em;">+ Ingrediente</button>
+                </div>
+
+                <div id="contenedorReceta" style="max-height: 150px; overflow-y: auto; padding-right: 5px; margin-bottom: 15px; border: 1px solid #f0f0f0; border-radius: 5px; padding: 10px;"></div>
             `;
-            // Lógica Recetas... (Igual que antes, simplificada aquí por espacio)
-            // ... (Copiar lógica de recetas de tu archivo anterior si la necesitas completa, es extensa) ...
-             const contenedorReceta = document.getElementById('contenedorReceta');
+
+            const contenedorReceta = document.getElementById('contenedorReceta');
+            
+            // Preparamos las opciones una sola vez
             const opcionesSelect = ingredientesDisponibles.map(ing => 
                 `<option value="${ing.id_ingrediente}">${ing.nombre_ing} (${ing.unidad_medida})</option>`
             ).join('');
+
+            // Función para añadir una fila visualmente compacta
             const anadirFilaReceta = (ingredienteReceta = {}) => {
                 const divFila = document.createElement('div');
                 divFila.classList.add('filaReceta');
-                divFila.innerHTML = `
-                    <select class="receta_id_ingrediente"><option value="">-- Ingrediente --</option>${opcionesSelect}</select>
-                    <input type="number" class="receta_cantidad" placeholder="Cant." value="${ingredienteReceta.cantidad_usada || ''}">
-                    <button type="button" class="btnQuitarIngrediente">X</button>
-                `;
-                if (ingredienteReceta.id_ingrediente) divFila.querySelector('.receta_id_ingrediente').value = ingredienteReceta.id_ingrediente;
-                contenedorReceta.appendChild(divFila);
-            };
-            document.getElementById('btnAnadirIngrediente').addEventListener('click', () => anadirFilaReceta());
-            contenedorReceta.addEventListener('click', (e) => { if (e.target.classList.contains('btnQuitarIngrediente')) e.target.closest('.filaReceta').remove(); });
-            if (modoFormulario === 'editar' && datos.id_producto) {
-                const res = await fetch(`/api/recetas/${datos.id_producto}`, { credentials: 'include' });
-                const recetaExistente = await res.json();
-                recetaExistente.forEach(item => anadirFilaReceta(item));
-            }
+                
+                // ESTILO FLEX PARA ALINEAR TODO EN UNA LÍNEA
+                divFila.style.cssText = "display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #f9f9f9;";
 
+                divFila.innerHTML = `
+                    <select class="receta_id_ingrediente" style="flex: 2; margin: 0; padding: 5px;" required>
+                        <option value="">-- Seleccionar --</option>
+                        ${opcionesSelect}
+                    </select>
+                    
+                    <input type="number" class="receta_cantidad" placeholder="Cant." value="${ingredienteReceta.cantidad_usada || ''}" step="0.01" style="flex: 1; margin: 0; padding: 5px;" required>
+                    
+                    <button type="button" class="btnQuitarIngrediente" style="background: #e74c3c; color: white; border: none; width: 30px; height: 30px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <ion-icon name="trash-outline" style="font-size: 1.2em; pointer-events: none;"></ion-icon>
+                    </button>
+                `;
+
+                // Asignar valor si estamos editando
+                if (ingredienteReceta.id_ingrediente) {
+                    divFila.querySelector('.receta_id_ingrediente').value = ingredienteReceta.id_ingrediente;
+                }
+
+                // Evento para borrar la fila
+                divFila.querySelector('.btnQuitarIngrediente').addEventListener('click', () => {
+                    divFila.remove();
+                });
+
+                contenedorReceta.appendChild(divFila);
+                
+                // Auto-scroll al fondo al agregar
+                contenedorReceta.scrollTop = contenedorReceta.scrollHeight;
+            };
+
+            document.getElementById('btnAnadirIngrediente').addEventListener('click', () => anadirFilaReceta());
+
+            // Cargar datos existentes si es edición
+            if (modoFormulario === 'editar' && datos.id_producto) {
+                try {
+                    const res = await fetch(`/api/recetas/${datos.id_producto}`, { credentials: 'include' });
+                    if(res.ok) {
+                        const recetaExistente = await res.json();
+                        recetaExistente.forEach(item => anadirFilaReceta(item));
+                    }
+                } catch(e) { console.error(e); }
+            } else {
+                // Si es nuevo, agregamos una fila vacía por defecto
+                anadirFilaReceta();
+            }
         } else if (seccion === 'ingredientes') {
-            // ... (Igual que antes) ...
              let costoCaja = '', piezasStock = '';
             if (datos.cantidad_disponible) {
                 piezasStock = (parseFloat(datos.cantidad_disponible) / parseFloat(datos.cantidad_por_unidad)).toFixed(1);
                 costoCaja = (parseFloat(datos.costo_ing) * parseFloat(datos.cantidad_por_unidad)).toFixed(2);
             }
             camposDinamicos.innerHTML = `
+            
                 <label>Nombre:</label><input type="text" name="nombre" value="${datos.nombre_ing || ''}" required>
                 <label>Unidad (Uso):</label>
                 <select name="unidad_medida" required>
@@ -742,4 +782,159 @@ document.addEventListener('DOMContentLoaded', () => {
             <br><small style="color:#555; font-weight:normal;">(Comparando Utilidad Neta)</small>
         `;
     });
+
+    async function cargarFinanzasDia(fecha = new Date().toISOString().split('T')[0]) {
+        try {
+            const res = await fetch(`/api/finanzas/dia?fecha=${fecha}`, { credentials: 'include' });
+            if(!res.ok) throw new Error("Error cargando finanzas");
+            
+            const datos = await res.json();
+            
+            // Suma total de todos los tipos de egresos
+            const totalGastos = parseFloat(datos.gastos_extra) + parseFloat(datos.gastos_fijos) + parseFloat(datos.sueldos);
+            const balance = parseFloat(datos.ingresos) - totalGastos;
+            
+            const colorBalance = balance >= 0 ? '#27ae60' : '#e74c3c'; // Verde o Rojo
+
+            const html = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 20px;">
+                    <div class="pedido-item" style="border-left: 5px solid #27ae60; padding: 15px;">
+                        <h4 style="margin:0 0 10px 0; color:#555;">Ingresos (Ventas)</h4>
+                        <p style="font-size: 1.5em; font-weight:bold; margin:0; color:#27ae60;">$${datos.ingresos.toFixed(2)}</p>
+                    </div>
+                    
+                    <div class="pedido-item" style="border-left: 5px solid #e74c3c; padding: 15px;">
+                        <h4 style="margin:0 0 10px 0; color:#555;">Sueldos (Diario)</h4>
+                        <p style="font-size: 1.2em; font-weight:bold; margin:0; color:#e74c3c;">$${datos.sueldos.toFixed(2)}</p>
+                    </div>
+
+                    <div class="pedido-item" style="border-left: 5px solid #e67e22; padding: 15px;">
+                        <h4 style="margin:0 0 10px 0; color:#555;">Gastos Fijos (Renta..)</h4>
+                        <p style="font-size: 1.2em; font-weight:bold; margin:0; color:#e67e22;">$${datos.gastos_fijos.toFixed(2)}</p>
+                    </div>
+
+                    <div class="pedido-item" style="border-left: 5px solid #f1c40f; padding: 15px;">
+                        <h4 style="margin:0 0 10px 0; color:#555;">Gastos Extra (Hoy)</h4>
+                        <p style="font-size: 1.2em; font-weight:bold; margin:0; color:#f39c12;">$${datos.gastos_extra.toFixed(2)}</p>
+                    </div>
+                </div>
+
+                <div style="margin-top: 30px; text-align: center; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                    <h3 style="margin:0; color: #333;">Balance Final del Día</h3>
+                    <span style="font-size: 2.5em; font-weight:bold; color:${colorBalance};">$${balance.toFixed(2)}</span>
+                </div>
+            `;
+            
+            const contenedor = document.getElementById('detalleFinanzasDia');
+            if(contenedor) contenedor.innerHTML = html;
+
+        } catch (e) {
+            console.error(e);
+            document.getElementById('detalleFinanzasDia').innerHTML = '<p style="color:red; text-align:center;">Error al cargar datos financieros.</p>';
+        }
+    }
+
+    // 2. Comparar Fechas (Lógica corregida: Utilidad Neta)
+    async function compararFechas() {
+        const fA = document.getElementById('fechaA').value;
+        const fB = document.getElementById('fechaB').value;
+        const resDiv = document.getElementById('resultadoComparacion');
+
+        if(!fA || !fB) {
+            alert("Por favor selecciona ambas fechas para comparar.");
+            return;
+        }
+
+        resDiv.innerHTML = 'Calculando...';
+        resDiv.classList.remove('oculto');
+
+        try {
+            // Obtenemos los datos completos de ambos días
+            const [resA, resB] = await Promise.all([
+                fetch(`/api/finanzas/dia?fecha=${fA}`, { credentials: 'include' }).then(r => r.json()),
+                fetch(`/api/finanzas/dia?fecha=${fB}`, { credentials: 'include' }).then(r => r.json())
+            ]);
+
+            // Calculamos utilidad neta (Ingresos - Todos los gastos)
+            const utilidadA = resA.ingresos - (resA.gastos_extra + resA.gastos_fijos + resA.sueldos);
+            const utilidadB = resB.ingresos - (resB.gastos_extra + resB.gastos_fijos + resB.sueldos);
+
+            // Diferencia Porcentual
+            let diferencia = 0;
+            let esMejor = false;
+
+            // Evitar división por cero
+            if (utilidadA !== 0) {
+                diferencia = ((utilidadB - utilidadA) / Math.abs(utilidadA)) * 100;
+            } else if (utilidadB > 0) {
+                diferencia = 100; // De 0 a algo positivo es un aumento "infinito", lo topamos a 100% simbólico
+            }
+
+            esMejor = utilidadB > utilidadA;
+            const colorDif = esMejor ? '#27ae60' : '#e74c3c';
+            const icono = esMejor ? 'trending-up-outline' : 'trending-down-outline';
+            const textoMejor = esMejor ? 'MEJOR' : 'PEOR';
+
+            // Formatear fechas para mostrar bonito
+            const fechaFormatA = new Date(fA).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+            const fechaFormatB = new Date(fB).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+
+            resDiv.innerHTML = `
+                <div style="background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #eee; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="text-align: left;">
+                        <div style="color: #777; font-size: 0.9em;">Comparando Utilidad Neta</div>
+                        <div style="margin-top: 5px;">
+                            ${fechaFormatA}: <b>$${utilidadA.toFixed(2)}</b>
+                        </div>
+                        <div>
+                            ${fechaFormatB}: <b>$${utilidadB.toFixed(2)}</b>
+                        </div>
+                    </div>
+                    
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.5em; font-weight: bold; color: ${colorDif}; display: flex; align-items: center; gap: 5px;">
+                            <ion-icon name="${icono}"></ion-icon> ${Math.abs(diferencia).toFixed(1)}%
+                        </div>
+                        <div style="color: ${colorDif}; font-weight: bold; font-size: 0.9em;">${textoMejor} QUE EL DÍA BASE</div>
+                    </div>
+                </div>
+            `;
+
+        } catch (e) {
+            console.error(e);
+            resDiv.innerHTML = 'Error al comparar datos.';
+        }
+    }
+
+    // 3. Modal para Configurar Gastos DIARIOS (Prompt Simple)
+    function mostrarModalConfiguracionDiaria() {
+        // Usamos prompts nativos para no crear más HTML complejo, funcional y rápido
+        const concepto = prompt("Nombre del gasto fijo diario (Ej: Renta diaria, Luz, Internet):");
+        if(!concepto) return; // Cancelado
+        
+        const monto = prompt(`¿Cuánto se debe descontar DIARIO por "${concepto}"?`);
+        if(!monto || isNaN(monto)) {
+            alert("Monto inválido");
+            return;
+        }
+
+        // Enviar al backend
+        fetch('/api/finanzas/gastos-fijos', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'include',
+            body: JSON.stringify({ concepto, monto: parseFloat(monto) })
+        })
+        .then(res => {
+            if(res.ok) {
+                alert("Gasto fijo configurado. Se aplicará en el reporte de todos los días.");
+                // Recargar la vista actual para ver el impacto
+                const hoy = new Date().toISOString().split('T')[0];
+                cargarFinanzasDia(hoy);
+            } else {
+                alert("Error al guardar.");
+            }
+        })
+        .catch(e => console.error(e));
+    }
 });

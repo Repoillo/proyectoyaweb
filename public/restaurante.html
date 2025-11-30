@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Mi Restaurante</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Iconos -->
     <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
     <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
-    <!-- Librería para generar QR fácilmente -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 </head>
 <body class="paginaRestaurante">
@@ -21,7 +19,6 @@
                 <ul>
                     <li><a href="#" data-target="panelProductos" data-seccion="productos"><ion-icon name="fast-food-outline"></ion-icon> Productos</a></li>
                     <li><a href="#" data-target="panelIngredientes" data-seccion="ingredientes"><ion-icon name="leaf-outline"></ion-icon> Ingredientes</a></li>
-                    <!-- NUEVA SECCIÓN DE MESAS -->
                     <li><a href="#" data-target="panelMesas" data-seccion="mesas"><ion-icon name="grid-outline"></ion-icon> Mesas</a></li>
                     <li><a href="#" data-target="panelEmpleados" data-seccion="empleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
                     <li><a href="#" data-target="panelFinanzas" data-seccion="finanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
@@ -39,7 +36,6 @@
                 <p>Selecciona una categoría del panel para comenzar.</p>
             </div>
 
-            <!-- PANEL PRODUCTOS -->
             <div id="panelProductos" class="panelContenido oculto" data-seccion="productos">
                 <h1 class="seccion">Gestión de Productos</h1>
                 <div class="contenedorAcciones">
@@ -60,7 +56,6 @@
                 </table>
             </div>
 
-            <!-- PANEL INGREDIENTES -->
             <div id="panelIngredientes" class="panelContenido oculto" data-seccion="ingredientes">
                 <h1 class="seccion">Gestión de Ingredientes</h1>
                 <div class="contenedorAcciones">
@@ -72,20 +67,18 @@
                     <thead>
                         <tr>
                             <th>Nombre</th>
-                            <th>Unidad</th>
-                            <th>Costo</th>
-                            <th>Cantidad</th>
+                            <th>Unidad Base</th> 
+                            <th>Total Neto</th>  
+                            <th>Stock (Envases)</th> 
                         </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
             </div>
 
-            <!-- NUEVO PANEL MESAS (DUEÑO) -->
             <div id="panelMesas" class="panelContenido oculto" data-seccion="mesas">
                 <h1 class="seccion">Configuración de Mesas</h1>
                 <p style="text-align: center; color: #666; margin-bottom: 20px;">Aquí defines cuántas mesas físicas existen en tu local.</p>
-                
                 <div class="contenedorAcciones">
                     <button class="boton botonAgregar">Nueva Mesa</button>
                     <button class="boton botonEliminar" disabled>Eliminar Mesa</button>
@@ -102,7 +95,6 @@
                 </table>
             </div>
 
-            <!-- PANEL EMPLEADOS -->
             <div id="panelEmpleados" class="panelContenido oculto" data-seccion="empleados">
                 <h1 class="seccion">Gestión de Empleados</h1>
                 <div class="contenedorAcciones">
@@ -123,62 +115,27 @@
             </div>
             
             <div id="panelFinanzas" class="panelContenido oculto" data-seccion="finanzas">
-                <h1 class="seccion">Finanzas & Métricas</h1>
-
-                <div class="finanzas-controles">
-    
-                <div class="finanzas-grupo">
-                    <h4>Registrar Gasto</h4>
-                    <form id="formEgresoRapido" class="finanzas-inputs">
-                        <input type="text" id="descEgreso" placeholder="Concepto" required style="width:140px;">
-                        <input type="number" id="montoEgreso" placeholder="$" required style="width:80px;">
-                        <button type="submit" class="boton" style="padding: 10px 15px; border-radius:8px;">+</button>
-                    </form>
-                </div>
-
-                <div class="finanzas-grupo">
-                    <h4>Comparar Rendimiento</h4>
-                    <div class="finanzas-inputs">
-                        <select id="fechaA"></select>
-                        <span class="texto-vs">vs</span>
-                        <select id="fechaB"></select>
-                        <button id="btnComparar" class="boton" style="padding: 10px 15px; border-radius:8px;">
-                            <ion-icon name="analytics-outline"></ion-icon>
-                        </button>
-                    </div>
-                </div>
-            </div>
+                <h1 class="seccion">Finanzas y Caja</h1>
                 
-                <div id="resultadoComparacion" class="oculto" style="text-align:center; background:#fdf2e9; color:#d35400; padding:15px; border-radius:10px; margin-bottom:20px; font-weight:bold;"></div>
-
-                <div id="listaFinanzasDias" class="contenedor-pedidos">
-                    </div>
-
-                <div id="modalDetalleFinanzas" class="detalle-pedido-contenedor oculto" style="margin-top:20px;">
-                    <button class="boton botonCancelar" id="btnCerrarFinanzas">&larr; Volver</button>
-                    <h2 id="tituloDetalleFinanzas" style="margin-top:15px;"></h2>
-                    
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; text-align:center; margin-bottom:20px;">
-                        <div style="background:#e8f8f5; padding:10px; border-radius:8px;">
-                            <span style="display:block; font-size:0.8em; color:#27ae60;">Ingresos</span>
-                            <strong id="detIngresos" style="font-size:1.2em; color:#27ae60;">$0</strong>
-                        </div>
-                        <div style="background:#fdedec; padding:10px; border-radius:8px;">
-                            <span style="display:block; font-size:0.8em; color:#e74c3c;">Gastos + Nómina</span>
-                            <strong id="detEgresos" style="font-size:1.2em; color:#e74c3c;">$0</strong>
-                        </div>
-                        <div style="background:#ebf5fb; padding:10px; border-radius:8px;">
-                            <span style="display:block; font-size:0.8em; color:#2980b9;">Utilidad Neta</span>
-                            <strong id="detUtilidad" style="font-size:1.2em; color:#2980b9;">$0</strong>
-                        </div>
-                    </div>
-
-                    <h3>Desglose</h3>
-                    <ul id="listaMovimientosDia" class="lista-detalle"></ul>
+                <div class="acciones-finanzas" style="margin-bottom: 20px; display:flex; justify-content:center; gap:10px;">
+                    <button class="boton" id="btnRegistrarGastoExtra">Registrar Gasto Extra (Hoy)</button>
+                    <button class="boton boton-secundario" id="btnConfigurarGastosFijos" style="background-color:#95a5a6; border-color:#7f8c8d;">Configurar Gastos Diarios</button>
                 </div>
+
+                <div class="comparador-fechas card-panel" style="background:#fff; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                    <h3 style="margin-top:0; color:var(--primaryblue);">Comparar Días</h3>
+                    <div style="display: flex; gap: 10px; align-items: center; justify-content:center; flex-wrap:wrap;">
+                        <input type="date" id="fechaA" class="input-fecha">
+                        <span style="font-weight: bold; color:var(--primaryorange);">VS</span>
+                        <input type="date" id="fechaB" class="input-fecha">
+                        <button class="boton" id="btnEjecutarComparacion">Comparar</button>
+                    </div>
+                    <div id="resultadoComparacion" style="margin-top: 15px;"></div>
+                </div>
+                
+                <div id="detalleFinanzasDia" style="margin-top: 20px;"></div>
             </div>
 
-            <!-- PANEL HISTORIAL -->
             <div id="panelPedidosCompletados" class="panelContenido oculto" data-seccion="pedidos_completados">
                 <h1 class="seccion">Pedidos Completados</h1>
                 <div class="contenedorAcciones">
@@ -202,15 +159,11 @@
         </main>
     </div>
 
-    <!-- BOTÓN FLOTANTE QR -->
     <button id="btnExportarQR" title="Descargar QR del Restaurante">
         <ion-icon name="qr-code-outline"></ion-icon>
     </button>
-    <!-- Canvas oculto para generar el QR -->
     <canvas id="qrCanvas" style="display:none;"></canvas>
 
-
-    <!-- MODAL GENERAL -->
     <div id="modal" class="modal oculto">
         <div class="contenidoModal">
             <h2 id="tituloModal"></h2>
