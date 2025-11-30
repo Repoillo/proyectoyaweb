@@ -123,52 +123,53 @@
                 </div>
 
                 <div class="comparador-fechas card-panel" style="background:#fff; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                    <h3 style="margin-top:0; color:var(--primaryblue);">Comparar Días</h3>
+                    <h3 style="margin-top:0; color:var(--primaryblue);">Comparar Desempeño</h3>
                     <div style="display: flex; gap: 10px; align-items: center; justify-content:center; flex-wrap:wrap;">
                         <input type="date" id="fechaA" class="input-fecha">
                         <span style="font-weight: bold; color:var(--primaryorange);">VS</span>
                         <input type="date" id="fechaB" class="input-fecha">
                         <button class="boton" id="btnEjecutarComparacion">Comparar</button>
                     </div>
-                    <div id="resultadoComparacion" style="margin-top: 15px;"></div>
+                    <div id="resultadoComparacion" style="margin-top: 15px; text-align:center;"></div>
                 </div>
                 
-                <div id="detalleFinanzasDia" style="margin-top: 20px;"></div>
-            </div>
+                <div id="listaFinanzasDias" class="contenedor-pedidos"></div>
 
-            <div id="panelPedidosCompletados" class="panelContenido oculto" data-seccion="pedidos_completados">
-                <h1 class="seccion">Pedidos Completados</h1>
-                <div class="contenedorAcciones">
-                    <button class="boton botonEliminar" id="btnArchivarTodos" title="Archivar todos los pedidos completados">
-                        <ion-icon name="trash-bin-outline"></ion-icon> Limpiar Completados
-                    </button>
-                </div>
-                <div id="listaPedidosCompletados" class="contenedor-pedidos"></div>
-
-                <div id="detallePedidoCompletado" class="detalle-pedido-contenedor oculto">
-                    <button class="boton botonCancelar" id="btnVolverALista">&larr; Volver a la lista</button>
-                    <h2 id="detallePedidoTitulo"></h2>
-                    <p id="detallePedidoTotal"></p>
-                    <h3>Productos Comprados</h3>
-                    <ul id="detalleProductosLista" class="lista-detalle"></ul>
-                    <h3>Ingredientes Gastados (Total)</h3>
-                    <ul id="detalleIngredientesLista" class="lista-detalle"></ul>
+                <div id="modalDetalleFinanzas" class="detalle-pedido-contenedor oculto" style="margin-top:20px;">
+                    <button class="boton botonCancelar" id="btnCerrarFinanzas">&larr; Volver</button>
+                    <h2 id="tituloDetalleFinanzas"></h2>
+                    <div style="display:flex; justify-content:space-around; margin:15px 0;">
+                        <span>Ingresos: <b id="detIngresos" style="color:#27ae60"></b></span>
+                        <span>Egresos: <b id="detEgresos" style="color:#e74c3c"></b></span>
+                        <span>Utilidad: <b id="detUtilidad"></b></span>
+                    </div>
+                    <ul id="listaMovimientosDia" class="lista-detalle"></ul>
                 </div>
             </div>
 
-        </main>
-    </div>
-
-    <button id="btnExportarQR" title="Descargar QR del Restaurante">
-        <ion-icon name="qr-code-outline"></ion-icon>
-    </button>
-    <canvas id="qrCanvas" style="display:none;"></canvas>
-
+            <div id="modalGastoExtra" class="modal oculto">
+                <div class="contenidoModal">
+                    <h2>Registrar Salida de Dinero</h2>
+                    <form id="formEgresoRapido">
+                        <label>Descripción del Gasto:</label>
+                        <input type="text" id="descEgreso" placeholder="Ej. Hielos, Gasolina, Proveedor..." required>
+                        
+                        <label>Monto:</label>
+                        <input type="number" id="montoEgreso" step="0.01" placeholder="0.00" required>
+                        
+                        <div class="accionesFormulario">
+                            <button type="submit" class="boton botonEliminar">Registrar Egreso</button>
+                            <button type="button" class="boton botonCancelar" id="btnCancelarGasto">Cancelar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
     <div id="modal" class="modal oculto">
         <div class="contenidoModal">
-            <h2 id="tituloModal"></h2>
+            <h2 id="tituloModal">Título del Modal</h2>
             <form id="formulario">
-                <div id="camposDinamicos"></div>
+                <div id="camposDinamicos">
+                    </div>
                 
                 <div class="accionesFormulario">
                     <button type="submit" class="boton botonGuardar">Guardar</button>
@@ -178,6 +179,27 @@
         </div>
     </div>
 
+    <div id="panelPedidosCompletados" class="panelContenido oculto" data-seccion="pedidos_completados">
+        <h1 class="seccion">Historial de Pedidos</h1>
+        <div class="contenedorAcciones">
+            <button class="boton botonEliminar" id="btnArchivarTodos">Limpiar Historial Visual</button>
+        </div>
+        
+        <div id="listaPedidosCompletados" class="contenedor-pedidos">
+            </div>
+
+        <div id="detallePedidoCompletado" class="detalle-pedido-contenedor oculto">
+            <button class="boton botonCancelar" id="btnVolverALista">&larr; Volver a la lista</button>
+            <h2 id="detallePedidoTitulo">Detalle</h2>
+            <p id="detallePedidoTotal" style="font-size:1.2em; margin-bottom:10px;"></p>
+            
+            <h3 style="border-bottom:1px solid #eee;">Productos</h3>
+            <ul id="detalleProductosLista" class="lista-detalle"></ul>
+            
+            <h3 style="border-bottom:1px solid #eee; margin-top:15px;">Ingredientes Descontados</h3>
+            <ul id="detalleIngredientesLista" class="lista-detalle"></ul>
+        </div>
+    </div>        
     <script src="restaurante.js"></script>
 </body>
 </html>

@@ -1,6 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
+    console.log("🚀 Iniciando Sistema de Restaurante vFinal...");
 
-    // --- VERIFICACIÓN DE ROL ---
+    // ==========================================
+    // 1. VERIFICACIÓN DE SEGURIDAD Y ROL
+    // ==========================================
     async function verificarAccesoDashboard() {
         try {
             const respuesta = await fetch('/api/auth/status', {credentials: 'include'});
@@ -20,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            console.log('Sesión de dueño activa verificada.');
+            console.log('✅ Sesión de dueño activa verificada.');
             
         } catch (error) {
             console.error('Error verificando sesión en dashboard:', error);
@@ -29,54 +32,142 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     verificarAccesoDashboard();
 
-    // --- ELEMENTOS DOM PRINCIPALES ---
+    // ==========================================
+    // 2. REFERENCIAS DOM (GLOBALES)
+    // ==========================================
+    const getEl = (id) => document.getElementById(id);
+
+    // Navegación
     const enlacesMenu = document.querySelectorAll('.menu a');
     const paneles = document.querySelectorAll('.panelContenido');
-    const panelBienvenida = document.getElementById('panelBienvenida');
+    const panelBienvenida = getEl('panelBienvenida');
     const botonSalir = document.querySelector('.botonSalir');
-    const panelPedidosCompletados = document.getElementById('panelPedidosCompletados');
-    const listaPedidosCompletados = document.getElementById('listaPedidosCompletados');
-    const detallePedidoCompletado = document.getElementById('detallePedidoCompletado');
-    const btnVolverALista = document.getElementById('btnVolverALista');
-    const btnArchivarTodos = document.getElementById('btnArchivarTodos');
-    const btnExportarQR = document.getElementById('btnExportarQR');
 
-    // --- ELEMENTOS DEL MODAL ---
-    const modal = document.getElementById('modal');
-    const tituloModal = document.getElementById('tituloModal');
-    const formulario = document.getElementById('formulario');
-    const camposDinamicos = document.getElementById('camposDinamicos');
-    const botonCancelar = modal.querySelector('.botonCancelar');    
+    // Módulos Específicos
+    const panelPedidosCompletados = getEl('panelPedidosCompletados');
+    const listaPedidosCompletados = getEl('listaPedidosCompletados');
+    const detallePedidoCompletado = getEl('detallePedidoCompletado');
+    const btnVolverALista = getEl('btnVolverALista');
+    const btnArchivarTodos = getEl('btnArchivarTodos');
+    const btnExportarQR = getEl('btnExportarQR');
 
-    // --- ESTADO DE LA APP ---
+    // Finanzas DOM
+    const listaFinanzasDias = getEl('listaFinanzasDias');
+    const modalDetalleFinanzas = getEl('modalDetalleFinanzas');
+    const btnRegistrarGastoExtra = getEl('btnRegistrarGastoExtra');
+    const btnConfigurarGastosFijos = getEl('btnConfigurarGastosFijos');
+    const btnEjecutarComparacion = getEl('btnEjecutarComparacion');
+    const btnCerrarFinanzas = getEl('btnCerrarFinanzas');
+    const modalGastoExtra = getEl('modalGastoExtra');
+    const formEgresoRapido = getEl('formEgresoRapido');
+    const btnCancelarGasto = getEl('btnCancelarGasto');
+
+    // Modal CRUD Principal
+    const modal = getEl('modal');
+    const tituloModal = getEl('tituloModal');
+    const formulario = getEl('formulario');
+    const camposDinamicos = getEl('camposDinamicos');
+    const botonCancelar = modal ? modal.querySelector('.botonCancelar') : null;    
+
+    // --- ESTADO DE LA APLICACIÓN ---
     let seccionActiva = null;
     let itemSeleccionadoId = null;
     let modoFormulario = 'agregar';
     let filaSeleccionada = null;
     let ingredientesDisponibles = []; 
+    let nominaDiariaGlobal = 0;
+    let datosFinanzasCache = [];
 
-    // --- FUNCIÓN GENÉRICA PARA CARGAR DATOS ---
+    // Validar integridad del HTML
+    if(!modal) console.error("⚠️ FALTAL: No se encontró el #modal en el HTML.");
+    if(!formulario) console.error("⚠️ FATAL: No se encontró el #formulario en el HTML.");
+
+    // ==========================================
+    // 3. CACHÉ DE INGREDIENTES (Para Recetas)
+    // ==========================================
+    async function cargarIngredientesCache() {
+        try {
+            const respuesta = await fetch('/api/ingredientes', { credentials: 'include' });
+            if (!respuesta.ok) throw new Error('No se pudieron cargar ingredientes');
+            ingredientesDisponibles = await respuesta.json();
+            console.log(`📦 ${ingredientesDisponibles.length} ingredientes cargados en caché.`);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+    cargarIngredientesCache();
+
+    // ==========================================
+    // 4. LÓGICA DE NAVEGACIÓN (MENÚ)
+    // ==========================================
+    enlacesMenu.forEach(enlace => {
+        enlace.addEventListener('click', (evento) => {
+            evento.preventDefault();
+            seccionActiva = enlace.dataset.seccion;
+            const targetId = enlace.dataset.target;
+            
+            // 1. Limpieza de UI
+            itemSeleccionadoId = null;
+            filaSeleccionada = null;
+            enlacesMenu.forEach(link => link.classList.remove('activo'));
+            enlace.classList.add('activo');
+            
+            // 2. Ocultar todos los paneles
+            if(panelBienvenida) panelBienvenida.classList.add('oculto');
+            paneles.forEach(panel => panel.classList.add('oculto'));
+            
+            // 3. Mostrar panel objetivo
+            const panelAMostrar = getEl(targetId);
+            if (panelAMostrar) {
+                panelAMostrar.classList.remove('oculto');
+                
+                // 4. Cargar datos específicos según la sección
+                console.log(`Navegando a sección: ${seccionActiva}`);
+                if (seccionActiva === 'pedidos_completados') {
+                    cargarPedidosCompletados(); 
+                } else if (seccionActiva === 'finanzas') {
+                     cargarFinanzas(); 
+                } else {
+                     // Productos, Ingredientes, Empleados, Mesas
+                     cargarDatos(seccionActiva);
+                }
+            } else {
+                console.error(`No se encontró el panel con ID: ${targetId}`);
+            }
+        });
+    });
+
+    // ==========================================
+    // 5. FUNCIÓN GENÉRICA PARA CARGAR DATOS (CRUD)
+    // ==========================================
     async function cargarDatos(seccion) {
+        const panel = document.querySelector(`.panelContenido[data-seccion="${seccion}"]`);
+        if(!panel) return;
+        const cuerpoTabla = panel.querySelector('tbody');
+        if(!cuerpoTabla) return; // Finanzas no tiene tabla tbody
+
+        cuerpoTabla.innerHTML = '<tr><td colspan="5" style="text-align:center;">Cargando datos...</td></tr>';
+        deshabilitarBotones(panel);
+
         try {
             const respuesta = await fetch(`/api/${seccion}`, { credentials: 'include' });
-            if (respuesta.status === 401) {
-                window.location.href = '/index.html';
-                return;
-            }
-            if (!respuesta.ok) throw new Error('No se pudieron cargar los datos.');
+            if (respuesta.status === 401) return window.location.href = '/index.html';
+            if (!respuesta.ok) throw new Error('Error en la API');
 
             const datos = await respuesta.json();
-            const panel = document.querySelector(`.panelContenido[data-seccion="${seccion}"]`);
-            const cuerpoTabla = panel.querySelector('tbody');
             cuerpoTabla.innerHTML = '';
+
+            // Actualizar caché si estamos en ingredientes
+            if(seccion === 'ingredientes') ingredientesDisponibles = datos;
 
             datos.forEach(item => {
                 const fila = document.createElement('tr');
                 let itemId, innerHTML;
 
+                // --- RENDERIZADO POR TIPO ---
                 if (seccion === 'productos') {
                     itemId = item.id_producto;
-                    fila.dataset.productosData = JSON.stringify(item); 
+                    fila.dataset.productosData = JSON.stringify(item); // Guardamos TODO el objeto para editar
                     innerHTML = `
                         <td>${item.nombre}</td>
                         <td>${item.tipo}</td>
@@ -87,13 +178,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     itemId = item.id_ing;
                     
                     let envasesEnteros = 0;
-                    let totalNeto = '';
-
+                    let totalNeto = `${parseFloat(item.cantidad_disponible).toFixed(2)} ${item.unidad_medida}`;
+                    
                     if(parseFloat(item.cantidad_por_unidad) > 0) {
                         envasesEnteros = Math.floor(parseFloat(item.cantidad_disponible) / parseFloat(item.cantidad_por_unidad));
                     }
 
-                    totalNeto = `${parseFloat(item.cantidad_disponible).toFixed(2)} ${item.unidad_medida}`;
                     const stockVisual = item.cantidad_por_unidad > 1 
                         ? `${envasesEnteros} pzas cerradas` 
                         : `${parseFloat(item.cantidad_disponible).toFixed(0)} pzas`;
@@ -105,7 +195,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td>${item.unidad_medida}</td>
                         <td style="color:#555;">${totalNeto}</td>
                         <td style="font-weight:bold; color: var(--primaryblue);">${stockVisual}</td>`;
-                }else if (seccion === 'empleados') {
+
+                } else if (seccion === 'empleados') {
                     itemId = item.id_empleado;
                     fila.dataset.empleadosData = JSON.stringify(item);
                      innerHTML = `
@@ -115,6 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 } else if (seccion === 'mesas') {
                     itemId = item.id_mesa;
+                    fila.dataset.mesasData = JSON.stringify(item); // Importante guardar data
                     const estadoClass = item.estado === 'ocupada' ? 'color:red; font-weight:bold;' : 'color:green; font-weight:bold;';
                     innerHTML = `
                         <td style="font-size:1.1em;">${item.numero_mesa}</td>
@@ -127,56 +219,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 cuerpoTabla.appendChild(fila);
             });
 
-            deshabilitarBotones(panel);
-
         } catch (error) {
             console.error(`Error cargando ${seccion}:`, error);
+            cuerpoTabla.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando datos.</td></tr>`;
         }
     }
-    
-    // --- Cargar ingredientes a la caché ---
-    async function cargarIngredientesCache() {
-        try {
-            const respuesta = await fetch('/api/ingredientes', { credentials: 'include' });
-            if (!respuesta.ok) throw new Error('No se pudieron cargar ingredientes');
-            ingredientesDisponibles = await respuesta.json();
-        } catch (error) {
-            console.error(error);
-        }
-    }
-    cargarIngredientesCache();
 
-    enlacesMenu.forEach(enlace => {
-        enlace.addEventListener('click', (evento) => {
-            evento.preventDefault();
-            seccionActiva = enlace.dataset.seccion;
-            itemSeleccionadoId = null;
-            filaSeleccionada = null;
-
-            enlacesMenu.forEach(link => link.classList.remove('activo'));
-            enlace.classList.add('activo');
-            
-            panelBienvenida.classList.add('oculto');
-            paneles.forEach(panel => panel.classList.add('oculto'));
-            
-            const panelAMostrar = document.getElementById(enlace.dataset.target);
-            if (panelAMostrar) {
-                panelAMostrar.classList.remove('oculto');
-                
-                // === AQUÍ ESTÁ EL CAMBIO IMPORTANTE ===
-                if (seccionActiva === 'pedidos_completados') {
-                    cargarPedidosCompletados(); 
-                } else if (seccionActiva === 'finanzas') {
-                     // ¡ESTA LÍNEA ES LA QUE FALTABA!
-                     cargarFinanzas(); 
-                } else {
-                     cargarDatos(seccionActiva);
-                }
-                // ======================================
-            }
-        });
-    });
-    // --- LÓGICA DE SELECCIÓN DE FILAS ---
+    // ==========================================
+    // 6. INTERACCIÓN CON TABLAS (SELECCIÓN)
+    // ==========================================
     document.querySelectorAll('.tablaDatos tbody').forEach(tbody => {
         tbody.addEventListener('click', (e) => {
             const fila = e.target.closest('tr');
@@ -214,7 +265,9 @@ document.addEventListener('DOMContentLoaded', () => {
         itemSeleccionadoId = null;
     }
 
-    // --- BOTONES CRUD ---
+    // ==========================================
+    // 7. BOTONES CRUD (AGREGAR, EDITAR, ELIMINAR)
+    // ==========================================
 
     // AGREGAR
     document.querySelectorAll('.botonAgregar').forEach(boton => {
@@ -225,8 +278,12 @@ document.addEventListener('DOMContentLoaded', () => {
             
             modoFormulario = 'agregar';
             tituloModal.textContent = `Agregar ${seccion}`;
+            
+            // RESETEAR FORMULARIO (Si existe)
+            if(formulario) formulario.reset();
+
             generarCamposModal(seccion);
-            modal.classList.remove('oculto');
+            if(modal) modal.classList.remove('oculto');
         });
     });
 
@@ -240,16 +297,18 @@ document.addEventListener('DOMContentLoaded', () => {
             
             modoFormulario = 'editar';
             tituloModal.textContent = `Editar ${seccion}`;
+            
+            // Recuperar datos del dataset
             const datos = JSON.parse(filaSeleccionada.dataset[seccion + 'Data']);
             generarCamposModal(seccion, datos);
-            modal.classList.remove('oculto');
+            if(modal) modal.classList.remove('oculto');
         });
     });
 
     // ELIMINAR
     document.querySelectorAll('.botonEliminar').forEach(boton => {
         boton.addEventListener('click', async (e) => {
-            // Excepción para el botón de archivar todos (que tiene la misma clase pero diferente ID)
+            // Excepción para Historial
             if (e.target.id === 'btnArchivarTodos' || e.target.closest('#btnArchivarTodos')) return;
 
             if (!itemSeleccionadoId) return;
@@ -270,14 +329,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } catch (error) {
                     console.error('Error al eliminar:', error);
-                    alert('Error al eliminar el item.');
+                    alert('Error al eliminar. Puede tener dependencias.');
                 }
             }
         });
     });
 
-    // --- GENERAR CAMPOS MODAL ---
+    // ==========================================
+    // 8. GENERACIÓN DINÁMICA DE FORMULARIOS
+    // ==========================================
     async function generarCamposModal(seccion, datos = {}) {
+        if(!camposDinamicos) return;
         camposDinamicos.innerHTML = '';
 
         if (seccion === 'productos') {
@@ -305,19 +367,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div id="contenedorReceta" style="max-height: 150px; overflow-y: auto; padding-right: 5px; margin-bottom: 15px; border: 1px solid #f0f0f0; border-radius: 5px; padding: 10px;"></div>
             `;
 
-            const contenedorReceta = document.getElementById('contenedorReceta');
-            
-            // Preparamos las opciones una sola vez
+            const contenedorReceta = getEl('contenedorReceta');
             const opcionesSelect = ingredientesDisponibles.map(ing => 
                 `<option value="${ing.id_ingrediente}">${ing.nombre_ing} (${ing.unidad_medida})</option>`
             ).join('');
 
-            // Función para añadir una fila visualmente compacta
+            // Función interna para añadir fila de receta
             const anadirFilaReceta = (ingredienteReceta = {}) => {
                 const divFila = document.createElement('div');
                 divFila.classList.add('filaReceta');
-                
-                // ESTILO FLEX PARA ALINEAR TODO EN UNA LÍNEA
                 divFila.style.cssText = "display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #f9f9f9;";
 
                 divFila.innerHTML = `
@@ -325,33 +383,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         <option value="">-- Seleccionar --</option>
                         ${opcionesSelect}
                     </select>
-                    
                     <input type="number" class="receta_cantidad" placeholder="Cant." value="${ingredienteReceta.cantidad_usada || ''}" step="0.01" style="flex: 1; margin: 0; padding: 5px;" required>
-                    
-                    <button type="button" class="btnQuitarIngrediente" style="background: #e74c3c; color: white; border: none; width: 30px; height: 30px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                        <ion-icon name="trash-outline" style="font-size: 1.2em; pointer-events: none;"></ion-icon>
-                    </button>
+                    <button type="button" class="btnQuitarIngrediente" style="background: #e74c3c; color: white; border: none; width: 30px; height: 30px; border-radius: 5px;">X</button>
                 `;
 
-                // Asignar valor si estamos editando
                 if (ingredienteReceta.id_ingrediente) {
                     divFila.querySelector('.receta_id_ingrediente').value = ingredienteReceta.id_ingrediente;
                 }
 
-                // Evento para borrar la fila
-                divFila.querySelector('.btnQuitarIngrediente').addEventListener('click', () => {
-                    divFila.remove();
-                });
-
+                divFila.querySelector('.btnQuitarIngrediente').addEventListener('click', () => divFila.remove());
                 contenedorReceta.appendChild(divFila);
-                
-                // Auto-scroll al fondo al agregar
                 contenedorReceta.scrollTop = contenedorReceta.scrollHeight;
             };
 
-            document.getElementById('btnAnadirIngrediente').addEventListener('click', () => anadirFilaReceta());
+            getEl('btnAnadirIngrediente').addEventListener('click', () => anadirFilaReceta());
 
-            // Cargar datos existentes si es edición
+            // Cargar receta existente si editamos
             if (modoFormulario === 'editar' && datos.id_producto) {
                 try {
                     const res = await fetch(`/api/recetas/${datos.id_producto}`, { credentials: 'include' });
@@ -361,17 +408,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch(e) { console.error(e); }
             } else {
-                // Si es nuevo, agregamos una fila vacía por defecto
-                anadirFilaReceta();
+                anadirFilaReceta(); // Una fila vacía por defecto
             }
+
         } else if (seccion === 'ingredientes') {
              let costoCaja = '', piezasStock = '';
+             // Lógica para mostrar datos calculados
             if (datos.cantidad_disponible) {
-                piezasStock = (parseFloat(datos.cantidad_disponible) / parseFloat(datos.cantidad_por_unidad)).toFixed(1);
-                costoCaja = (parseFloat(datos.costo_ing) * parseFloat(datos.cantidad_por_unidad)).toFixed(2);
+                piezasStock = (parseFloat(datos.cantidad_disponible) / parseFloat(datos.cantidad_por_unidad || 1)).toFixed(1);
+                costoCaja = (parseFloat(datos.costo_ing) * parseFloat(datos.cantidad_por_unidad || 1)).toFixed(2);
             }
             camposDinamicos.innerHTML = `
-            
                 <label>Nombre:</label><input type="text" name="nombre" value="${datos.nombre_ing || ''}" required>
                 <label>Unidad (Uso):</label>
                 <select name="unidad_medida" required>
@@ -380,10 +427,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <option value="pza" ${datos.unidad_medida === 'pza' ? 'selected' : ''}>Piezas</option>
                 </select>
                 <div style="background:#f0f4f8; padding:10px; margin-top:10px;">
-                    <h4>Compra</h4>
-                    <label>Contenido x Envase:</label><input type="number" name="cantidad_por_unidad" value="${datos.cantidad_por_unidad || ''}" required>
-                    <label>Costo Envase:</label><input type="number" name="costo_compra" value="${costoCaja}" required>
-                    <label>Stock (Envases):</label><input type="number" name="piezas_compradas" value="${piezasStock}" required>
+                    <h4>Datos de Compra</h4>
+                    <label>Contenido x Envase:</label><input type="number" name="cantidad_por_unidad" value="${datos.cantidad_por_unidad || 1}" required>
+                    <label>Costo Envase (Referencia):</label><input type="number" name="costo_compra" value="${costoCaja}" placeholder="Opcional">
+                    <label>Stock Total (Unidades Sueltas):</label><input type="number" name="cantidad_disponible" value="${datos.cantidad_disponible || 0}" required>
                 </div>`;
 
         } else if (seccion === 'empleados') {
@@ -395,23 +442,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     <option value="Mesero" ${datos.rol === 'Mesero' ? 'selected' : ''}>Mesero</option>
                     <option value="Cajero" ${datos.rol === 'Cajero' ? 'selected' : ''}>Cajero</option>
                 </select>
-                <label>Sueldo:</label><input type="number" name="sueldo" value="${datos.sueldo || ''}" required>
+                <label>Sueldo Diario:</label><input type="number" name="sueldo" value="${datos.sueldo || ''}" required>
             `;
         } else if (seccion === 'mesas') {
-            // NUEVO FORMULARIO PARA MESAS
             camposDinamicos.innerHTML = `
                 <label>Identificador de Mesa:</label>
-                <input type="text" name="numero_mesa" value="${datos.numero_mesa || ''}" placeholder="Ej. Mesa 1, Barra 2, Terraza 1" required>
+                <input type="text" name="numero_mesa" value="${datos.numero_mesa || ''}" placeholder="Ej. Mesa 1, Barra 2" required>
             `;
         }
     }
 
-    // --- ENVIAR FORMULARIO ---
-    formulario.addEventListener('submit', async (e) => {
+    // ==========================================
+    // 9. ENVÍO DE FORMULARIO (POST/PUT)
+    // ==========================================
+    if(formulario) formulario.addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(formulario);
         const datos = Object.fromEntries(formData.entries());
         
+        // Procesar receta si es producto
         if (seccionActiva === 'productos') {
             datos.receta = [];
             document.querySelectorAll('.filaReceta').forEach(fila => {
@@ -443,191 +492,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error(error);
-            alert('Error al guardar los datos.');
+            alert('Error al guardar los datos (Ver consola).');
         }
     });
 
-    botonCancelar.addEventListener('click', () => modal.classList.add('oculto'));
+    if(botonCancelar) botonCancelar.addEventListener('click', () => modal.classList.add('oculto'));
 
-    botonSalir.addEventListener('click', async () => {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-        window.location.href = '/index.html';
-    });
-
-    // --- HISTORIAL Y DETALLES (Funciones auxiliares) ---
-    // (Mantener las funciones cargarPedidosCompletados, mostrarDetallePedido y archivar de tu archivo anterior)
-    async function cargarPedidosCompletados() { /* Copiar de tu archivo anterior */ 
-        listaPedidosCompletados.classList.remove('oculto');
-        detallePedidoCompletado.classList.add('oculto');
-        listaPedidosCompletados.innerHTML = '<p>Cargando...</p>';
-        try {
-            const res = await fetch('/api/pedidos/completados', { credentials: 'include' });
-            const pedidos = await res.json();
-            listaPedidosCompletados.innerHTML = '';
-            if(pedidos.length===0) { listaPedidosCompletados.innerHTML='<p>Vacío</p>'; return;}
-            pedidos.forEach(p => {
-                const div = document.createElement('div');
-                div.classList.add('pedido-item');
-                div.innerHTML = `<h3>${new Date(p.fecha_creacion).toLocaleDateString()}</h3><p>$${p.total_calculado}</p>`;
-                div.onclick = () => mostrarDetallePedido(p.id_pedido);
-                listaPedidosCompletados.appendChild(div);
-            });
-        } catch(e){ console.error(e); }
-    }
-
-   // --- FUNCIÓN CORREGIDA Y COMPLETA ---
-    async function mostrarDetallePedido(id) {
-         const listaPrincipal = document.getElementById('listaPedidosCompletados');
-         const panelDetalle = document.getElementById('detallePedidoCompletado');
-         
-         // 1. Cambiar visibilidad
-         listaPrincipal.classList.add('oculto');
-         panelDetalle.classList.remove('oculto');
-         
-         // Limpiar datos previos
-         document.getElementById('detallePedidoTitulo').textContent = 'Cargando...';
-         document.getElementById('detalleProductosLista').innerHTML = '';
-         document.getElementById('detalleIngredientesLista').innerHTML = '';
-
-         try {
-            const res = await fetch(`/api/pedidos/completados/${id}`, {credentials: 'include'});
-            
-            if (!res.ok) throw new Error('Error al cargar detalle');
-
-            const data = await res.json();
-
-            // 2. Rellenar Información Encabezado
-            document.getElementById('detallePedidoTitulo').textContent = `Detalle del Pedido: ${data.info.mesa}`;
-            document.getElementById('detallePedidoTotal').innerHTML = `
-                Total Cobrado: <b>$${parseFloat(data.info.total_calculado).toFixed(2)}</b><br>
-                <small>Fecha: ${new Date(data.info.fecha_creacion).toLocaleString()}</small>
-            `;
-
-            // 3. Rellenar Lista de Productos
-            const listaProd = document.getElementById('detalleProductosLista');
-            if (data.productos.length === 0) {
-                listaProd.innerHTML = '<li>Sin productos registrados</li>';
-            } else {
-                data.productos.forEach(prod => {
-                    const li = document.createElement('li');
-                    li.innerHTML = `
-                        <span>${prod.cantidad}x ${prod.nombre}</span>
-                        <span>$${prod.precio_en_pedido} c/u</span>
-                    `;
-                    listaProd.appendChild(li);
-                });
-            }
-
-            // 4. Rellenar Lista de Ingredientes (Cálculo de Merma)
-            const listaIng = document.getElementById('detalleIngredientesLista');
-            if (data.ingredientes.length === 0) {
-                listaIng.innerHTML = '<li style="color:#888">No se descontaron ingredientes (¿Sin receta?)</li>';
-            } else {
-                data.ingredientes.forEach(ing => {
-                    const li = document.createElement('li');
-                    // Estilo diferente para resaltar que es gasto de inventario
-                    li.style.borderLeft = "3px solid #e74c3c"; 
-                    li.style.backgroundColor = "#fff5f5";
-                    li.innerHTML = `
-                        <b>${ing.nombre}</b>
-                        <span style="color:#c0392b">-${parseFloat(ing.total_gastado).toFixed(2)} ${ing.unidad_medida}</span>
-                    `;
-                    listaIng.appendChild(li);
-                });
-            }
-
-         } catch(e) {
-             console.error(e);
-             alert('No se pudo cargar el detalle del pedido.');
-             // Volver atrás si falla
-             panelDetalle.classList.add('oculto');
-             listaPrincipal.classList.remove('oculto');
-         }
-    }
-
-    btnVolverALista.addEventListener('click', () => {
-        detallePedidoCompletado.classList.add('oculto');
-        listaPedidosCompletados.classList.remove('oculto');
-    });
-
-    btnArchivarTodos.addEventListener('click', async () => {
-        if(!confirm('¿Archivar todo?')) return;
-        await fetch('/api/pedidos/archivar-completados', { method: 'PUT', credentials: 'include' });
-        cargarPedidosCompletados();
-    });
-
-    // --- GENERACIÓN DE QR ---
-    btnExportarQR.addEventListener('click', () => {
-        const canvas = document.getElementById('qrCanvas');
-        
-        // Payload para la App
-        const dataApp = JSON.stringify({
-            accion: 'cargar_menu',
-            id_restaurante: 1,
-            nombre: 'Restaurante YA'
-        });
-
-        // Usamos la librería QRious
-        const qr = new QRious({
-            element: canvas,
-            value: dataApp,
-            size: 500,
-            background: 'white',
-            foreground: 'black',
-            level: 'H' // Alto nivel de corrección de errores
-        });
-
-        // Crear enlace de descarga
-        const link = document.createElement('a');
-        link.download = 'QR-Restaurante-General.png';
-        link.href = canvas.toDataURL();
-        link.click();
-    });
     // ==========================================
-    // === LÓGICA DE FINANZAS (NUEVO BLOQUE) ===
+    // 10. MÓDULO DE FINANZAS (COMPLETO)
     // ==========================================
-    
-    const listaFinanzasDias = document.getElementById('listaFinanzasDias');
-    const modalDetalleFinanzas = document.getElementById('modalDetalleFinanzas');
-    const listaMovimientosDia = document.getElementById('listaMovimientosDia');
-    const formEgresoRapido = document.getElementById('formEgresoRapido');
-    const selectFechaA = document.getElementById('fechaA');
-    const selectFechaB = document.getElementById('fechaB');
-    const btnComparar = document.getElementById('btnComparar');
-    const resComparacion = document.getElementById('resultadoComparacion');
-    
-    let nominaDiariaGlobal = 0;
-    let datosFinanzasCache = []; // Para poder comparar sin recargar
-
-    // 1. Cargar Datos Generales
     async function cargarFinanzas() {
+        if(!listaFinanzasDias) return;
+        listaFinanzasDias.innerHTML = '<p style="text-align:center;">Analizando ingresos y egresos...</p>';
+        
         try {
             // A. Obtener Costo de Nómina Diaria
             const resNomina = await fetch('/api/finanzas/nomina-diaria', { credentials: 'include' });
-            const dataNomina = await resNomina.json();
-            nominaDiariaGlobal = parseFloat(dataNomina.nomina_diaria);
+            if(resNomina.ok) {
+                const dataNomina = await resNomina.json();
+                nominaDiariaGlobal = parseFloat(dataNomina.nomina_diaria) || 0;
+            }
 
             // B. Obtener Resumen de Días
             const res = await fetch('/api/finanzas/resumen', { credentials: 'include' });
+            if(!res.ok) throw new Error("Error obteniendo resumen financiero");
+            
             const dias = await res.json();
-            datosFinanzasCache = dias; // Guardar para comparador
+            // Ordenar por fecha descendente
+            datosFinanzasCache = dias.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
 
-            renderizarFinanzas(dias);
-            llenarSelectoresComparacion(dias);
+            renderizarFinanzas(datosFinanzasCache);
+            llenarSelectoresComparacion(datosFinanzasCache);
 
         } catch (error) {
             console.error('Error cargando finanzas:', error);
+            listaFinanzasDias.innerHTML = '<p style="color:red; text-align:center;">Error de conexión.</p>';
         }
     }
 
-    // 2. Renderizar Tarjetas de Días
     function renderizarFinanzas(dias) {
         listaFinanzasDias.innerHTML = '';
-        modalDetalleFinanzas.classList.add('oculto');
-        listaFinanzasDias.classList.remove('oculto');
-
         if (dias.length === 0) {
-            listaFinanzasDias.innerHTML = '<p>No hay registros financieros aún.</p>';
+            listaFinanzasDias.innerHTML = '<p style="text-align:center;">No hay registros financieros aún.</p>';
             return;
         }
 
@@ -636,33 +542,32 @@ document.addEventListener('DOMContentLoaded', () => {
             const egresosManuales = parseFloat(dia.total_egresos);
             const numVentas = parseInt(dia.num_ventas);
             
-            // Cálculo Clave: Egresos Totales = Manuales + Nómina Diaria
+            // Egresos Totales = Manuales + Nómina Diaria
             const egresosTotales = egresosManuales + nominaDiariaGlobal;
             const utilidad = ingresos - egresosTotales;
             
-            // Ticket Promedio
-            const ticketPromedio = numVentas > 0 ? (ingresos / numVentas).toFixed(2) : '0.00';
+            // Fecha Amigable
+            const fechaStr = new Date(dia.fecha).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 
-            // Formato de Fecha Amigable
-            const fechaObj = new Date(dia.fecha);
-            const fechaStr = fechaObj.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
-
-            // Crear Tarjeta
             const card = document.createElement('div');
-            card.classList.add('pedido-item'); // Reusamos estilo
-            
-            // Color de borde según utilidad (Verde si gana, Rojo si pierde)
+            card.classList.add('pedido-item'); 
             card.style.borderLeft = utilidad >= 0 ? '5px solid #2ecc71' : '5px solid #e74c3c';
+            card.style.cursor = 'pointer';
 
             card.innerHTML = `
-                <h3 style="text-transform:capitalize;">${fechaStr}</h3>
-                <div style="margin:15px 0;">
-                    <div style="font-size:0.9em; color:#777;">Ingresos</div>
-                    <div style="font-size:1.4em; font-weight:bold; color:#27ae60;">$${ingresos.toFixed(2)}</div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="margin:0; text-transform:capitalize;">${fechaStr}</h3>
+                    <span style="font-size:0.8em; color:#777;">${numVentas} ventas</span>
+                </div>
+                <div style="margin:15px 0; text-align:center;">
+                    <div style="font-size:2em; font-weight:bold; color:${utilidad >= 0 ? '#27ae60' : '#e74c3c'}">
+                        $${utilidad.toFixed(2)}
+                    </div>
+                    <small style="color:#aaa;">Utilidad Neta</small>
                 </div>
                 <div style="display:flex; justify-content:space-between; font-size:0.85em; color:#555; border-top:1px solid #eee; padding-top:10px;">
-                    <span>Ticket Prom: <b>$${ticketPromedio}</b></span>
-                    <span>Utilidad: <b style="color:${utilidad >= 0 ? '#2980b9' : '#e74c3c'}">$${utilidad.toFixed(2)}</b></span>
+                    <span style="color:#27ae60">Ing: $${ingresos.toFixed(0)}</span>
+                    <span style="color:#e74c3c">Egr: $${egresosTotales.toFixed(0)}</span>
                 </div>
             `;
             
@@ -671,63 +576,103 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 3. Ver Detalle (Modal)
+    // Llenar selects para comparar SOLO fechas existentes
+    function llenarSelectoresComparacion(dias) {
+        const selA = getEl('fechaA');
+        const selB = getEl('fechaB');
+        if(!selA || !selB) return; // Si son inputs date nativos, esto fallará gracefully
+
+        // Si son <select>, los llenamos. Si son <input type="date">, el usuario elige manualmente.
+        // Asumiendo que pueden ser selects por la petición anterior:
+        if(selA.tagName === 'SELECT') {
+            const opts = dias.map(d => {
+                const f = d.fecha.split('T')[0];
+                return `<option value="${f}">${f}</option>`;
+            }).join('');
+            selA.innerHTML = '<option value="">-- Seleccionar --</option>' + opts;
+            selB.innerHTML = '<option value="">-- Seleccionar --</option>' + opts;
+        }
+    }
+
+    // Ver Detalle Día (Modal)
     async function verDetalleDia(fechaRaw, ingresos, egresosManuales, utilidad) {
+        if(!modalDetalleFinanzas) return;
         listaFinanzasDias.classList.add('oculto');
         modalDetalleFinanzas.classList.remove('oculto');
         
-        // Convertir fecha YYYY-MM-DDT... a YYYY-MM-DD para la API
         const fechaAPI = fechaRaw.split('T')[0]; 
 
-        document.getElementById('tituloDetalleFinanzas').textContent = `Detalle del ${fechaAPI}`;
-        document.getElementById('detIngresos').textContent = `$${ingresos.toFixed(2)}`;
-        document.getElementById('detEgresos').textContent = `$${(egresosManuales + nominaDiariaGlobal).toFixed(2)}`;
-        document.getElementById('detUtilidad').textContent = `$${utilidad.toFixed(2)}`;
+        getEl('tituloDetalleFinanzas').textContent = `Corte del ${fechaAPI}`;
+        getEl('detIngresos').textContent = `$${ingresos.toFixed(2)}`;
+        getEl('detEgresos').textContent = `$${(egresosManuales + nominaDiariaGlobal).toFixed(2)}`;
+        getEl('detUtilidad').textContent = `$${utilidad.toFixed(2)}`;
 
-        listaMovimientosDia.innerHTML = '<p>Cargando movimientos...</p>';
+        const listaMov = getEl('listaMovimientosDia');
+        listaMov.innerHTML = '<p>Cargando detalles...</p>';
 
         try {
             const res = await fetch(`/api/finanzas/detalle/${fechaAPI}`, { credentials: 'include' });
             const movimientos = await res.json();
             
-            listaMovimientosDia.innerHTML = '';
+            listaMov.innerHTML = '';
             
-            // A. Insertar Nómina como primer gasto (Virtual)
-            const liNomina = document.createElement('li');
-            liNomina.style.borderLeft = '4px solid #e74c3c';
-            liNomina.innerHTML = `<span>Nómina Diaria (Prorrateada)</span> <span style="color:#e74c3c;">-$${nominaDiariaGlobal.toFixed(2)}</span>`;
-            listaMovimientosDia.appendChild(liNomina);
+            // 1. Mostrar Nómina Prorrateada
+            if(nominaDiariaGlobal > 0) {
+                const liNomina = document.createElement('li');
+                liNomina.style.borderLeft = '4px solid #e74c3c';
+                liNomina.style.backgroundColor = '#fff5f5';
+                liNomina.style.padding = '10px';
+                liNomina.style.marginBottom = '5px';
+                liNomina.innerHTML = `<div style="display:flex; justify-content:space-between;"><span>Nómina/Fijos (Auto)</span> <span style="color:#e74c3c; font-weight:bold;">-$${nominaDiariaGlobal.toFixed(2)}</span></div>`;
+                listaMov.appendChild(liNomina);
+            }
 
-            // B. Listar Movimientos Reales
-            movimientos.forEach(mov => {
-                const li = document.createElement('li');
-                const esIngreso = mov.tipo === 'ingreso';
-                li.style.borderLeft = esIngreso ? '4px solid #2ecc71' : '4px solid #e74c3c';
-                
-                li.innerHTML = `
-                    <span>${mov.descripcion}</span> 
-                    <span style="color:${esIngreso ? '#27ae60' : '#e74c3c'}; font-weight:bold;">
-                        ${esIngreso ? '+' : '-'}$${parseFloat(mov.monto).toFixed(2)}
-                    </span>`;
-                listaMovimientosDia.appendChild(li);
-            });
-
+            // 2. Mostrar Movimientos
+            if(movimientos.length === 0 && nominaDiariaGlobal === 0) {
+                listaMov.innerHTML = '<p>Sin movimientos registrados.</p>';
+            } else {
+                movimientos.forEach(mov => {
+                    const li = document.createElement('li');
+                    const esIngreso = mov.tipo === 'ingreso';
+                    li.style.borderLeft = esIngreso ? '4px solid #2ecc71' : '4px solid #e74c3c';
+                    li.style.padding = '10px';
+                    li.style.backgroundColor = '#fff';
+                    li.style.marginBottom = '5px';
+                    
+                    li.innerHTML = `
+                        <div style="display:flex; justify-content:space-between;">
+                            <span>${mov.descripcion}</span> 
+                            <span style="color:${esIngreso ? '#27ae60' : '#e74c3c'}; font-weight:bold;">
+                                ${esIngreso ? '+' : '-'}$${parseFloat(mov.monto).toFixed(2)}
+                            </span>
+                        </div>`;
+                    listaMov.appendChild(li);
+                });
+            }
         } catch (error) {
             console.error(error);
-            listaMovimientosDia.innerHTML = '<p>Error cargando detalles.</p>';
+            listaMov.innerHTML = '<p>Error al obtener detalle.</p>';
         }
     }
 
-    document.getElementById('btnCerrarFinanzas').addEventListener('click', () => {
+    // Botones Finanzas
+    if(btnCerrarFinanzas) btnCerrarFinanzas.addEventListener('click', () => {
         modalDetalleFinanzas.classList.add('oculto');
         listaFinanzasDias.classList.remove('oculto');
     });
 
-    // 4. Registro de Gasto Manual
-    formEgresoRapido.addEventListener('submit', async (e) => {
+    if(btnRegistrarGastoExtra) btnRegistrarGastoExtra.addEventListener('click', () => {
+        if(modalGastoExtra) modalGastoExtra.classList.remove('oculto');
+    });
+
+    if(btnCancelarGasto) btnCancelarGasto.addEventListener('click', () => {
+        if(modalGastoExtra) modalGastoExtra.classList.add('oculto');
+    });
+
+    if(formEgresoRapido) formEgresoRapido.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const descripcion = document.getElementById('descEgreso').value;
-        const monto = document.getElementById('montoEgreso').value;
+        const descripcion = getEl('descEgreso').value;
+        const monto = getEl('montoEgreso').value;
 
         try {
             const res = await fetch('/api/finanzas/egreso', {
@@ -737,204 +682,205 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ descripcion, monto })
             });
             if(res.ok) {
+                modalGastoExtra.classList.add('oculto');
                 formEgresoRapido.reset();
-                alert('Gasto registrado');
-                cargarFinanzas(); // Recargar para ver el impacto inmediato
+                cargarFinanzas(); // Recargar
+                alert('Gasto registrado con éxito.');
             }
         } catch(e) { console.error(e); }
     });
 
-    // 5. Lógica de Comparación
-    function llenarSelectoresComparacion(dias) {
-        const opts = dias.map(d => `<option value="${d.fecha}">${new Date(d.fecha).toLocaleDateString()}</option>`).join('');
-        selectFechaA.innerHTML = opts;
-        selectFechaB.innerHTML = opts;
-    }
+    // Comparador
+    if(btnEjecutarComparacion) btnEjecutarComparacion.addEventListener('click', () => {
+        const fA = getEl('fechaA').value;
+        const fB = getEl('fechaB').value;
+        const resDiv = getEl('resultadoComparacion');
 
-    btnComparar.addEventListener('click', () => {
-        const fechaA = selectFechaA.value;
-        const fechaB = selectFechaB.value;
-        
-        const diaA = datosFinanzasCache.find(d => d.fecha === fechaA);
-        const diaB = datosFinanzasCache.find(d => d.fecha === fechaB);
+        if(!fA || !fB) return alert("Selecciona dos fechas.");
 
-        if(!diaA || !diaB) return;
+        const diaA = datosFinanzasCache.find(d => d.fecha.startsWith(fA));
+        const diaB = datosFinanzasCache.find(d => d.fecha.startsWith(fB));
 
-        // Usamos la utilidad neta para comparar (Ingresos - Egresos - Nomina)
+        if(!diaA || !diaB) {
+            resDiv.innerHTML = '<span style="color:red">Datos insuficientes para comparar.</span>';
+            return;
+        }
+
         const utilidadA = parseFloat(diaA.total_ingresos) - (parseFloat(diaA.total_egresos) + nominaDiariaGlobal);
         const utilidadB = parseFloat(diaB.total_ingresos) - (parseFloat(diaB.total_egresos) + nominaDiariaGlobal);
 
-        let diffPorcentaje = 0;
-        if (utilidadA !== 0) {
-            diffPorcentaje = ((utilidadB - utilidadA) / Math.abs(utilidadA)) * 100;
-        }
-
-        const mejorPeor = diffPorcentaje > 0 ? 'MEJOR' : 'PEOR';
-        const color = diffPorcentaje > 0 ? '#27ae60' : '#c0392b';
-        const icono = diffPorcentaje > 0 ? '📈' : '📉';
-
-        resComparacion.classList.remove('oculto');
-        resComparacion.style.color = color;
-        resComparacion.innerHTML = `
-            ${icono} El día seleccionado (B) fue un 
-            <span style="font-size:1.2em;">${Math.abs(diffPorcentaje).toFixed(1)}% ${mejorPeor}</span> 
-            que el día base (A).
-            <br><small style="color:#555; font-weight:normal;">(Comparando Utilidad Neta)</small>
+        let diff = 0;
+        if(utilidadA !== 0) diff = ((utilidadB - utilidadA) / Math.abs(utilidadA)) * 100;
+        
+        const esMejor = diff >= 0;
+        
+        resDiv.innerHTML = `
+            <div style="padding:15px; background:${esMejor ? '#eafaf1' : '#fdedec'}; border:1px solid ${esMejor ? 'green' : 'red'}; border-radius:8px;">
+                Diferencia: <b style="font-size:1.2em; color:${esMejor?'green':'red'}">${diff > 0 ? '+' : ''}${diff.toFixed(1)}%</b><br>
+                <small>($${utilidadB.toFixed(2)} vs $${utilidadA.toFixed(2)})</small>
+            </div>
         `;
     });
 
-    async function cargarFinanzasDia(fecha = new Date().toISOString().split('T')[0]) {
-        try {
-            const res = await fetch(`/api/finanzas/dia?fecha=${fecha}`, { credentials: 'include' });
-            if(!res.ok) throw new Error("Error cargando finanzas");
-            
-            const datos = await res.json();
-            
-            // Suma total de todos los tipos de egresos
-            const totalGastos = parseFloat(datos.gastos_extra) + parseFloat(datos.gastos_fijos) + parseFloat(datos.sueldos);
-            const balance = parseFloat(datos.ingresos) - totalGastos;
-            
-            const colorBalance = balance >= 0 ? '#27ae60' : '#e74c3c'; // Verde o Rojo
-
-            const html = `
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 20px;">
-                    <div class="pedido-item" style="border-left: 5px solid #27ae60; padding: 15px;">
-                        <h4 style="margin:0 0 10px 0; color:#555;">Ingresos (Ventas)</h4>
-                        <p style="font-size: 1.5em; font-weight:bold; margin:0; color:#27ae60;">$${datos.ingresos.toFixed(2)}</p>
-                    </div>
-                    
-                    <div class="pedido-item" style="border-left: 5px solid #e74c3c; padding: 15px;">
-                        <h4 style="margin:0 0 10px 0; color:#555;">Sueldos (Diario)</h4>
-                        <p style="font-size: 1.2em; font-weight:bold; margin:0; color:#e74c3c;">$${datos.sueldos.toFixed(2)}</p>
-                    </div>
-
-                    <div class="pedido-item" style="border-left: 5px solid #e67e22; padding: 15px;">
-                        <h4 style="margin:0 0 10px 0; color:#555;">Gastos Fijos (Renta..)</h4>
-                        <p style="font-size: 1.2em; font-weight:bold; margin:0; color:#e67e22;">$${datos.gastos_fijos.toFixed(2)}</p>
-                    </div>
-
-                    <div class="pedido-item" style="border-left: 5px solid #f1c40f; padding: 15px;">
-                        <h4 style="margin:0 0 10px 0; color:#555;">Gastos Extra (Hoy)</h4>
-                        <p style="font-size: 1.2em; font-weight:bold; margin:0; color:#f39c12;">$${datos.gastos_extra.toFixed(2)}</p>
-                    </div>
-                </div>
-
-                <div style="margin-top: 30px; text-align: center; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-                    <h3 style="margin:0; color: #333;">Balance Final del Día</h3>
-                    <span style="font-size: 2.5em; font-weight:bold; color:${colorBalance};">$${balance.toFixed(2)}</span>
-                </div>
-            `;
-            
-            const contenedor = document.getElementById('detalleFinanzasDia');
-            if(contenedor) contenedor.innerHTML = html;
-
-        } catch (e) {
-            console.error(e);
-            document.getElementById('detalleFinanzasDia').innerHTML = '<p style="color:red; text-align:center;">Error al cargar datos financieros.</p>';
+    // Configuración Gastos Fijos
+    if(btnConfigurarGastosFijos) btnConfigurarGastosFijos.addEventListener('click', () => {
+        const nuevoMonto = prompt("Ingresa el monto diario fijo (Renta + Nómina + Servicios):", nominaDiariaGlobal);
+        if(nuevoMonto && !isNaN(nuevoMonto)) {
+            fetch('/api/finanzas/gastos-fijos', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ concepto: 'Diario Global', monto: parseFloat(nuevoMonto) })
+            }).then(() => {
+                alert("Monto actualizado.");
+                cargarFinanzas();
+            });
         }
-    }
+    });
 
-    // 2. Comparar Fechas (Lógica corregida: Utilidad Neta)
-    async function compararFechas() {
-        const fA = document.getElementById('fechaA').value;
-        const fB = document.getElementById('fechaB').value;
-        const resDiv = document.getElementById('resultadoComparacion');
-
-        if(!fA || !fB) {
-            alert("Por favor selecciona ambas fechas para comparar.");
-            return;
-        }
-
-        resDiv.innerHTML = 'Calculando...';
-        resDiv.classList.remove('oculto');
+    // ==========================================
+    // 11. HISTORIAL DE PEDIDOS (ROBUSTO)
+    // ==========================================
+    async function cargarPedidosCompletados() {
+        if(!listaPedidosCompletados) return;
+        listaPedidosCompletados.classList.remove('oculto');
+        if(detallePedidoCompletado) detallePedidoCompletado.classList.add('oculto');
+        listaPedidosCompletados.innerHTML = '<p>Cargando historial...</p>';
 
         try {
-            // Obtenemos los datos completos de ambos días
-            const [resA, resB] = await Promise.all([
-                fetch(`/api/finanzas/dia?fecha=${fA}`, { credentials: 'include' }).then(r => r.json()),
-                fetch(`/api/finanzas/dia?fecha=${fB}`, { credentials: 'include' }).then(r => r.json())
-            ]);
-
-            // Calculamos utilidad neta (Ingresos - Todos los gastos)
-            const utilidadA = resA.ingresos - (resA.gastos_extra + resA.gastos_fijos + resA.sueldos);
-            const utilidadB = resB.ingresos - (resB.gastos_extra + resB.gastos_fijos + resB.sueldos);
-
-            // Diferencia Porcentual
-            let diferencia = 0;
-            let esMejor = false;
-
-            // Evitar división por cero
-            if (utilidadA !== 0) {
-                diferencia = ((utilidadB - utilidadA) / Math.abs(utilidadA)) * 100;
-            } else if (utilidadB > 0) {
-                diferencia = 100; // De 0 a algo positivo es un aumento "infinito", lo topamos a 100% simbólico
+            const res = await fetch('/api/pedidos/completados', { credentials: 'include' });
+            
+            // Verificamos si la respuesta es JSON válido
+            const text = await res.text();
+            let pedidos = [];
+            try {
+                pedidos = JSON.parse(text);
+            } catch(e) {
+                console.error("Respuesta inválida servidor:", text);
+                listaPedidosCompletados.innerHTML = '<p style="color:red">Error del servidor al obtener historial.</p>';
+                return;
             }
 
-            esMejor = utilidadB > utilidadA;
-            const colorDif = esMejor ? '#27ae60' : '#e74c3c';
-            const icono = esMejor ? 'trending-up-outline' : 'trending-down-outline';
-            const textoMejor = esMejor ? 'MEJOR' : 'PEOR';
+            listaPedidosCompletados.innerHTML = '';
+            if(!Array.isArray(pedidos) || pedidos.length === 0) {
+                listaPedidosCompletados.innerHTML = '<p>No hay historial disponible.</p>';
+                return;
+            }
 
-            // Formatear fechas para mostrar bonito
-            const fechaFormatA = new Date(fA).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
-            const fechaFormatB = new Date(fB).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
-
-            resDiv.innerHTML = `
-                <div style="background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #eee; display: flex; align-items: center; justify-content: space-between;">
-                    <div style="text-align: left;">
-                        <div style="color: #777; font-size: 0.9em;">Comparando Utilidad Neta</div>
-                        <div style="margin-top: 5px;">
-                            ${fechaFormatA}: <b>$${utilidadA.toFixed(2)}</b>
-                        </div>
-                        <div>
-                            ${fechaFormatB}: <b>$${utilidadB.toFixed(2)}</b>
-                        </div>
-                    </div>
-                    
-                    <div style="text-align: right;">
-                        <div style="font-size: 1.5em; font-weight: bold; color: ${colorDif}; display: flex; align-items: center; gap: 5px;">
-                            <ion-icon name="${icono}"></ion-icon> ${Math.abs(diferencia).toFixed(1)}%
-                        </div>
-                        <div style="color: ${colorDif}; font-weight: bold; font-size: 0.9em;">${textoMejor} QUE EL DÍA BASE</div>
-                    </div>
-                </div>
-            `;
-
-        } catch (e) {
-            console.error(e);
-            resDiv.innerHTML = 'Error al comparar datos.';
+            pedidos.forEach(p => {
+                const div = document.createElement('div');
+                div.classList.add('pedido-item');
+                div.innerHTML = `
+                    <h3>${p.mesa}</h3>
+                    <p>Total: $${parseFloat(p.total_calculado).toFixed(2)}</p>
+                    <small>${new Date(p.fecha_creacion).toLocaleString()}</small>
+                `;
+                div.onclick = () => mostrarDetallePedido(p.id_pedido);
+                listaPedidosCompletados.appendChild(div);
+            });
+        } catch(e) { 
+            console.error(e); 
+            listaPedidosCompletados.innerHTML = '<p style="color:red">Error de conexión.</p>';
         }
     }
 
-    // 3. Modal para Configurar Gastos DIARIOS (Prompt Simple)
-    function mostrarModalConfiguracionDiaria() {
-        // Usamos prompts nativos para no crear más HTML complejo, funcional y rápido
-        const concepto = prompt("Nombre del gasto fijo diario (Ej: Renta diaria, Luz, Internet):");
-        if(!concepto) return; // Cancelado
-        
-        const monto = prompt(`¿Cuánto se debe descontar DIARIO por "${concepto}"?`);
-        if(!monto || isNaN(monto)) {
-            alert("Monto inválido");
-            return;
-        }
+    async function mostrarDetallePedido(id) {
+         if (!listaPedidosCompletados || !detallePedidoCompletado) return;
+         
+         listaPedidosCompletados.classList.add('oculto');
+         detallePedidoCompletado.classList.remove('oculto');
+         
+         getEl('detallePedidoTitulo').textContent = 'Cargando...';
+         getEl('detalleProductosLista').innerHTML = '';
+         getEl('detalleIngredientesLista').innerHTML = '';
 
-        // Enviar al backend
-        fetch('/api/finanzas/gastos-fijos', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            credentials: 'include',
-            body: JSON.stringify({ concepto, monto: parseFloat(monto) })
-        })
-        .then(res => {
-            if(res.ok) {
-                alert("Gasto fijo configurado. Se aplicará en el reporte de todos los días.");
-                // Recargar la vista actual para ver el impacto
-                const hoy = new Date().toISOString().split('T')[0];
-                cargarFinanzasDia(hoy);
+         try {
+            const res = await fetch(`/api/pedidos/completados/${id}`, {credentials: 'include'});
+            if (!res.ok) throw new Error('Error al cargar detalle');
+
+            const data = await res.json();
+
+            getEl('detallePedidoTitulo').textContent = `Pedido: ${data.info.mesa}`;
+            getEl('detallePedidoTotal').innerHTML = `
+                Total Cobrado: <b>$${parseFloat(data.info.total_calculado).toFixed(2)}</b><br>
+                <small>Fecha: ${new Date(data.info.fecha_creacion).toLocaleString()}</small>
+            `;
+
+            const listaProd = getEl('detalleProductosLista');
+            data.productos.forEach(prod => {
+                const li = document.createElement('li');
+                li.innerHTML = `${prod.cantidad}x ${prod.nombre} <span style="float:right">$${prod.precio_en_pedido}</span>`;
+                listaProd.appendChild(li);
+            });
+
+            const listaIng = getEl('detalleIngredientesLista');
+            if (data.ingredientes.length === 0) {
+                listaIng.innerHTML = '<li style="color:#888">Sin descuento de inventario.</li>';
             } else {
-                alert("Error al guardar.");
+                data.ingredientes.forEach(ing => {
+                    const li = document.createElement('li');
+                    li.style.borderLeft = "3px solid #e74c3c"; 
+                    li.style.backgroundColor = "#fff5f5";
+                    li.style.padding = "5px";
+                    li.style.marginBottom = "5px";
+                    li.innerHTML = `
+                        <b>${ing.nombre}</b>
+                        <span style="float:right; color:#c0392b">-${parseFloat(ing.total_gastado).toFixed(2)} ${ing.unidad_medida}</span>
+                    `;
+                    listaIng.appendChild(li);
+                });
             }
-        })
-        .catch(e => console.error(e));
+         } catch(e) {
+             console.error(e);
+             alert('No se pudo cargar el detalle.');
+             detallePedidoCompletado.classList.add('oculto');
+             listaPedidosCompletados.classList.remove('oculto');
+         }
     }
+
+    if(btnVolverALista) btnVolverALista.addEventListener('click', () => {
+        detallePedidoCompletado.classList.add('oculto');
+        listaPedidosCompletados.classList.remove('oculto');
+    });
+
+    if(btnArchivarTodos) btnArchivarTodos.addEventListener('click', async () => {
+        if(!confirm('¿Estás seguro de archivar todo el historial visual?')) return;
+        await fetch('/api/pedidos/archivar-completados', { method: 'PUT', credentials: 'include' });
+        cargarPedidosCompletados();
+    });
+
+    // ==========================================
+    // 12. GENERACIÓN DE QR
+    // ==========================================
+    if(btnExportarQR) btnExportarQR.addEventListener('click', () => {
+        const canvas = getEl('qrCanvas');
+        if(!canvas) return alert("Falta canvas QR en HTML");
+        
+        const dataApp = JSON.stringify({
+            accion: 'cargar_menu',
+            id_restaurante: 1,
+            nombre: 'Restaurante YA'
+        });
+
+        // Asegurarse de que QRious esté cargado
+        if(typeof QRious === 'undefined') return alert("Librería QRious no cargada.");
+
+        const qr = new QRious({
+            element: canvas,
+            value: dataApp,
+            size: 500,
+            background: 'white',
+            foreground: 'black',
+            level: 'H'
+        });
+
+        const link = document.createElement('a');
+        link.download = 'QR-Restaurante.png';
+        link.href = canvas.toDataURL();
+        link.click();
+    });
+
+    if(botonSalir) botonSalir.addEventListener('click', async () => {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        window.location.href = '/index.html';
+    });
 });
