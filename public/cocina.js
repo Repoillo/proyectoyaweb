@@ -1,5 +1,16 @@
 document.addEventListener('DOMContentLoaded', () => {
 
+    // 1. FUNCIÓN DE SEGURIDAD (Blindaje contra virus/XSS)
+    function escapeHTML(str) {
+        if (!str && str !== 0) return '';
+        return str.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     // --- ELEMENTOS DOM ---
     const listaComandas = document.getElementById('listaComandas');
     const botonSalir = document.querySelector('.botonSalir');
@@ -79,16 +90,17 @@ document.addEventListener('DOMContentLoaded', () => {
             // Clase de estado
             const claseEstado = `estado-${pedido.estado.replace(' ', '-')}`;
 
+            // APLICAMOS BLINDAJE AQUÍ (Mesa y Estado)
             comandaItem.innerHTML = `
                 <div class="comanda-info" data-id="${pedido.id_pedido}">
-                    <h3>${pedido.mesa}</h3>
+                    <h3>${escapeHTML(pedido.mesa)}</h3>
                     <p>Pedido #${pedido.id_pedido}</p>
                 </div>
                 <div class="comanda-info" data-id="${pedido.id_pedido}">
                     <p>${diffMins} min</p>
                 </div>
                 <div class="comanda-estado">
-                    <span class="${claseEstado}">${pedido.estado}</span>
+                    <span class="${claseEstado}">${escapeHTML(pedido.estado)}</span>
                 </div>
                 <div class="comanda-acciones">
                     <button class="boton-accion boton-proceso" title="Marcar 'En Proceso'" data-id="${pedido.id_pedido}" data-estado="en proceso">⏱</button>
@@ -182,12 +194,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Formatear como "Producto1: Receta, Producto2: Receta"
             let htmlReceta = '';
             productosConReceta.forEach(item => {
-                htmlReceta += `<h3>${item.cantidad_a_preparar}x ${item.nombre_producto}</h3>`;
+                // BLINDAJE: Nombre del producto
+                htmlReceta += `<h3>${item.cantidad_a_preparar}x ${escapeHTML(item.nombre_producto)}</h3>`;
                 
                 if (item.receta.length > 0) {
                     htmlReceta += '<ul>';
                     item.receta.forEach(ing => {
-                        htmlReceta += `<li>${ing.nombre} (${ing.cantidad_usada} ${ing.unidad_medida})</li>`;
+                        // BLINDAJE: Nombre ingrediente y unidad
+                        htmlReceta += `<li>${escapeHTML(ing.nombre)} (${ing.cantidad_usada} ${escapeHTML(ing.unidad_medida)})</li>`;
                     });
                     htmlReceta += '</ul>';
                 } else {

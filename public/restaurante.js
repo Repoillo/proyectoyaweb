@@ -1,9 +1,18 @@
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🚀 Iniciando Sistema de Restaurante vFinal...");
 
-    // ==========================================
-    // 1. VERIFICACIÓN DE SEGURIDAD Y ROL
-    // ==========================================
+    // 1. FUNCIÓN DE SEGURIDAD (ESCAPE HTML)
+    function escapeHTML(str) {
+        if (!str && str !== 0) return ''; 
+        return str.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    console.log("Iniciando Sistema de Restaurante Final (Seguro + Límites)...");
+
     async function verificarAccesoDashboard() {
         try {
             const respuesta = await fetch('/api/auth/status', {credentials: 'include'});
@@ -55,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const listaFinanzasDias = getEl('listaFinanzasDias');
     const modalDetalleFinanzas = getEl('modalDetalleFinanzas');
     const btnRegistrarGastoExtra = getEl('btnRegistrarGastoExtra');
-    const btnConfigurarGastosFijos = getEl('btnConfigurarGastosFijos');
+    // const btnConfigurarGastosFijos se maneja más abajo en su lógica específica
     const btnEjecutarComparacion = getEl('btnEjecutarComparacion');
     const btnCerrarFinanzas = getEl('btnCerrarFinanzas');
     const modalGastoExtra = getEl('modalGastoExtra');
@@ -79,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let datosFinanzasCache = [];
 
     // Validar integridad del HTML
-    if(!modal) console.error("⚠️ FALTAL: No se encontró el #modal en el HTML.");
+    if(!modal) console.error("⚠️ FATAL: No se encontró el #modal en el HTML.");
     if(!formulario) console.error("⚠️ FATAL: No se encontró el #formulario en el HTML.");
 
     // ==========================================
@@ -126,10 +135,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (seccionActiva === 'pedidos_completados') {
                     cargarPedidosCompletados(); 
                 } else if (seccionActiva === 'finanzas') {
-                     cargarFinanzas(); 
+                      cargarFinanzas(); 
                 } else {
-                     // Productos, Ingredientes, Empleados, Mesas
-                     cargarDatos(seccionActiva);
+                      // Productos, Ingredientes, Empleados, Mesas
+                      cargarDatos(seccionActiva);
                 }
             } else {
                 console.error(`No se encontró el panel con ID: ${targetId}`);
@@ -144,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const panel = document.querySelector(`.panelContenido[data-seccion="${seccion}"]`);
         if(!panel) return;
         const cuerpoTabla = panel.querySelector('tbody');
-        if(!cuerpoTabla) return; // Finanzas no tiene tabla tbody
+        if(!cuerpoTabla) return; 
 
         cuerpoTabla.innerHTML = '<tr><td colspan="5" style="text-align:center;">Cargando datos...</td></tr>';
         deshabilitarBotones(panel);
@@ -167,51 +176,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 // --- RENDERIZADO POR TIPO ---
                 if (seccion === 'productos') {
                     itemId = item.id_producto;
-                    fila.dataset.productosData = JSON.stringify(item); // Guardamos TODO el objeto para editar
+                    fila.dataset.productosData = JSON.stringify(item);
                     innerHTML = `
-                        <td>${item.nombre}</td>
-                        <td>${item.tipo}</td>
-                        <td>${item.descripcion || '-'}</td>
+                        <td>${escapeHTML(item.nombre)}</td>
+                        <td>${escapeHTML(item.tipo)}</td>
+                        <td>${escapeHTML(item.descripcion || '-')}</td>
                         <td>$${parseFloat(item.precio_venta).toFixed(2)}</td>`;
 
                 } else if (seccion === 'ingredientes') {
                     itemId = item.id_ing;
                     
-                    let envasesEnteros = 0;
-                    let totalNeto = `${parseFloat(item.cantidad_disponible).toFixed(2)} ${item.unidad_medida}`;
-                    
-                    if(parseFloat(item.cantidad_por_unidad) > 0) {
-                        envasesEnteros = Math.floor(parseFloat(item.cantidad_disponible) / parseFloat(item.cantidad_por_unidad));
-                    }
+                    let totalNeto = `${parseFloat(item.cantidad_disponible).toFixed(2)} ${escapeHTML(item.unidad_medida)}`;
+                    let stockVisual = '';
 
-                    const stockVisual = item.cantidad_por_unidad > 1 
-                        ? `${envasesEnteros} pzas cerradas` 
-                        : `${parseFloat(item.cantidad_disponible).toFixed(0)} pzas`;
+                    if(parseFloat(item.cantidad_por_unidad) > 1) {
+                        const envasesExactos = parseFloat(item.cantidad_disponible) / parseFloat(item.cantidad_por_unidad);
+                        const envasesTotales = Math.ceil(envasesExactos);
+                        
+                        stockVisual = `${envasesTotales} envases`;
+                    } else {
+                        stockVisual = `${parseFloat(item.cantidad_disponible).toFixed(0)} pzas`;
+                    }
 
                     fila.dataset.ingredientesData = JSON.stringify(item);
                     
                     innerHTML = `
-                        <td style="font-weight:500">${item.nombre_ing}</td>
-                        <td>${item.unidad_medida}</td>
+                        <td style="font-weight:500">${escapeHTML(item.nombre_ing)}</td>
+                        <td>${escapeHTML(item.unidad_medida)}</td>
                         <td style="color:#555;">${totalNeto}</td>
-                        <td style="font-weight:bold; color: var(--primaryblue);">${stockVisual}</td>`;
+                        <td style="font-weight:bold; color: var(--primaryblue); font-size: 1.1em;">${escapeHTML(stockVisual)}</td>`;
 
                 } else if (seccion === 'empleados') {
                     itemId = item.id_empleado;
                     fila.dataset.empleadosData = JSON.stringify(item);
-                     innerHTML = `
-                        <td>${item.nombre_empleado}</td>
-                        <td>${item.rol}</td>
+                      innerHTML = `
+                        <td>${escapeHTML(item.nombre_empleado)}</td>
+                        <td>${escapeHTML(item.rol)}</td>
                         <td>$${parseFloat(item.sueldo).toFixed(2)}</td>`;
                 
                 } else if (seccion === 'mesas') {
                     itemId = item.id_mesa;
-                    fila.dataset.mesasData = JSON.stringify(item); // Importante guardar data
+                    fila.dataset.mesasData = JSON.stringify(item);
                     const estadoClass = item.estado === 'ocupada' ? 'color:red; font-weight:bold;' : 'color:green; font-weight:bold;';
                     innerHTML = `
-                        <td style="font-size:1.1em;">${item.numero_mesa}</td>
-                        <td style="${estadoClass}">${item.estado.toUpperCase()}</td>
-                        <td style="font-family:monospace; font-size:1.2em;">${item.codigo_sesion || '-'}</td>`;
+                        <td style="font-size:1.1em;">${escapeHTML(item.numero_mesa)}</td>
+                        <td style="${estadoClass}">${escapeHTML(item.estado ? item.estado.toUpperCase() : '')}</td>
+                        <td style="font-family:monospace; font-size:1.2em;">${escapeHTML(item.codigo_sesion || '-')}</td>`;
                 }
                 
                 fila.dataset.id = itemId;
@@ -279,7 +289,10 @@ document.addEventListener('DOMContentLoaded', () => {
             modoFormulario = 'agregar';
             tituloModal.textContent = `Agregar ${seccion}`;
             
-            // RESETEAR FORMULARIO (Si existe)
+            // Restaurar el botón de guardar por si fue ocultado por el modal de gastos fijos
+            const btnGuardarPrincipal = formulario.querySelector('button[type="submit"]');
+            if(btnGuardarPrincipal) btnGuardarPrincipal.style.display = 'block';
+
             if(formulario) formulario.reset();
 
             generarCamposModal(seccion);
@@ -297,8 +310,11 @@ document.addEventListener('DOMContentLoaded', () => {
             
             modoFormulario = 'editar';
             tituloModal.textContent = `Editar ${seccion}`;
+
+            // Restaurar el botón de guardar por si fue ocultado
+            const btnGuardarPrincipal = formulario.querySelector('button[type="submit"]');
+            if(btnGuardarPrincipal) btnGuardarPrincipal.style.display = 'block';
             
-            // Recuperar datos del dataset
             const datos = JSON.parse(filaSeleccionada.dataset[seccion + 'Data']);
             generarCamposModal(seccion, datos);
             if(modal) modal.classList.remove('oculto');
@@ -308,7 +324,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ELIMINAR
     document.querySelectorAll('.botonEliminar').forEach(boton => {
         boton.addEventListener('click', async (e) => {
-            // Excepción para Historial
             if (e.target.id === 'btnArchivarTodos' || e.target.closest('#btnArchivarTodos')) return;
 
             if (!itemSeleccionadoId) return;
@@ -335,21 +350,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // ==========================================
-    // 8. GENERACIÓN DINÁMICA DE FORMULARIOS
-    // ==========================================
     async function generarCamposModal(seccion, datos = {}) {
         if(!camposDinamicos) return;
         camposDinamicos.innerHTML = '';
 
+        // *** APLICACIÓN DE LÍMITES Y ATRIBUTOS MIN/MAX ***
         if (seccion === 'productos') {
             camposDinamicos.innerHTML = `
                 <label>Nombre:</label>
-                <input type="text" name="nombre" value="${datos.nombre || ''}" required>
+                <input type="text" name="nombre" value="${escapeHTML(datos.nombre || '')}" required>
                 <label>Descripción:</label>
-                <textarea name="descripcion">${datos.descripcion || ''}</textarea>
+                <textarea name="descripcion">${escapeHTML(datos.descripcion || '')}</textarea>
                 <label>Precio:</label>
-                <input type="number" name="precio_venta" step="0.01" value="${datos.precio_venta || ''}" required>
+                <input type="number" name="precio_venta" step="0.01" min="1" max="10000" value="${datos.precio_venta || ''}" required>
                 <label>Tipo:</label>
                 <select name="tipo" required>
                     <option value="platillo" ${datos.tipo === 'platillo' ? 'selected' : ''}>Platillo</option>
@@ -369,21 +382,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const contenedorReceta = getEl('contenedorReceta');
             const opcionesSelect = ingredientesDisponibles.map(ing => 
-                `<option value="${ing.id_ingrediente}">${ing.nombre_ing} (${ing.unidad_medida})</option>`
+                `<option value="${ing.id_ingrediente}">${escapeHTML(ing.nombre_ing)} (${escapeHTML(ing.unidad_medida)})</option>`
             ).join('');
 
-            // Función interna para añadir fila de receta
             const anadirFilaReceta = (ingredienteReceta = {}) => {
                 const divFila = document.createElement('div');
                 divFila.classList.add('filaReceta');
                 divFila.style.cssText = "display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #f9f9f9;";
 
+                // Límite en receta también (Min 0.01, Max 5000)
                 divFila.innerHTML = `
                     <select class="receta_id_ingrediente" style="flex: 2; margin: 0; padding: 5px;" required>
                         <option value="">-- Seleccionar --</option>
                         ${opcionesSelect}
                     </select>
-                    <input type="number" class="receta_cantidad" placeholder="Cant." value="${ingredienteReceta.cantidad_usada || ''}" step="0.01" style="flex: 1; margin: 0; padding: 5px;" required>
+                    <input type="number" class="receta_cantidad" placeholder="Cant." value="${ingredienteReceta.cantidad_usada || ''}" step="0.01" min="0.01" max="5000" style="flex: 1; margin: 0; padding: 5px;" required>
                     <button type="button" class="btnQuitarIngrediente" style="background: #e74c3c; color: white; border: none; width: 30px; height: 30px; border-radius: 5px;">X</button>
                 `;
 
@@ -398,7 +411,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             getEl('btnAnadirIngrediente').addEventListener('click', () => anadirFilaReceta());
 
-            // Cargar receta existente si editamos
             if (modoFormulario === 'editar' && datos.id_producto) {
                 try {
                     const res = await fetch(`/api/recetas/${datos.id_producto}`, { credentials: 'include' });
@@ -408,46 +420,92 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch(e) { console.error(e); }
             } else {
-                anadirFilaReceta(); // Una fila vacía por defecto
+                anadirFilaReceta();
             }
 
         } else if (seccion === 'ingredientes') {
-             let costoCaja = '', piezasStock = '';
-             // Lógica para mostrar datos calculados
-            if (datos.cantidad_disponible) {
-                piezasStock = (parseFloat(datos.cantidad_disponible) / parseFloat(datos.cantidad_por_unidad || 1)).toFixed(1);
-                costoCaja = (parseFloat(datos.costo_ing) * parseFloat(datos.cantidad_por_unidad || 1)).toFixed(2);
-            }
+             let costoCaja = '';
+             let envasesExactos = 0;
+             let envasesVisuales = 0;
+             let contenidoTotal = parseFloat(datos.cantidad_disponible || 0);
+             let contenidoPorEnvase = parseFloat(datos.cantidad_por_unidad || 1);
+             
+             if (contenidoTotal > 0 && contenidoPorEnvase > 0) {
+                 envasesExactos = contenidoTotal / contenidoPorEnvase;
+                 envasesVisuales = Math.ceil(envasesExactos);
+             }
+             
+             if (datos.costo_ing && datos.cantidad_por_unidad) {
+                costoCaja = (parseFloat(datos.costo_ing) * parseFloat(datos.cantidad_por_unidad)).toFixed(2);
+             }
+
             camposDinamicos.innerHTML = `
-                <label>Nombre:</label><input type="text" name="nombre" value="${datos.nombre_ing || ''}" required>
-                <label>Unidad (Uso):</label>
-                <select name="unidad_medida" required>
-                    <option value="gr" ${datos.unidad_medida === 'gr' ? 'selected' : ''}>Gramos</option>
-                    <option value="ml" ${datos.unidad_medida === 'ml' ? 'selected' : ''}>Mililitros</option>
-                    <option value="pza" ${datos.unidad_medida === 'pza' ? 'selected' : ''}>Piezas</option>
-                </select>
-                <div style="background:#f0f4f8; padding:10px; margin-top:10px;">
-                    <h4>Datos de Compra</h4>
-                    <label>Contenido x Envase:</label><input type="number" name="cantidad_por_unidad" value="${datos.cantidad_por_unidad || 1}" required>
-                    <label>Costo Envase (Referencia):</label><input type="number" name="costo_compra" value="${costoCaja}" placeholder="Opcional">
-                    <label>Stock Total (Unidades Sueltas):</label><input type="number" name="cantidad_disponible" value="${datos.cantidad_disponible || 0}" required>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label>Nombre del Insumo:</label>
+                        <input type="text" name="nombre" value="${escapeHTML(datos.nombre_ing || '')}" required>
+                    </div>
+                    <div>
+                        <label>Unidad de Medida (Uso):</label>
+                        <select name="unidad_medida" required>
+                            <option value="gr" ${datos.unidad_medida === 'gr' ? 'selected' : ''}>Gramos</option>
+                            <option value="ml" ${datos.unidad_medida === 'ml' ? 'selected' : ''}>Mililitros</option>
+                            <option value="pza" ${datos.unidad_medida === 'pza' ? 'selected' : ''}>Piezas</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="background:#f0f4f8; padding:15px; margin-top:10px; border-radius:8px; border:1px solid #dae1e7;">
+                    <h4 style="margin-top:0; color:var(--primaryblue); margin-bottom:10px;">
+                        <ion-icon name="cube-outline"></ion-icon> Inventario y Presentación
+                    </h4>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div>
+                            <label>Contenido por Envase:</label>
+                            <input type="number" name="cantidad_por_unidad" value="${datos.cantidad_por_unidad || 1}" step="0.01" min="0.1" max="5000" required>
+                        </div>
+                        <div>
+                            <label>Costo del Envase ($):</label>
+                            <input type="number" name="costo_compra" value="${costoCaja}" step="0.01" min="0" max="50000">
+                        </div>
+                    </div>
+
+                    <div style="background: #fff; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid var(--primaryorange);">
+                        <strong style="color: #2c3e50; font-size: 1.1em;">
+                            Stock Actual: ${envasesVisuales} Envases en uso
+                        </strong>
+                        <div style="font-size: 0.85em; color: #7f8c8d;">
+                            Exacto: ${envasesExactos.toFixed(2)} envases (${contenidoTotal} ${escapeHTML(datos.unidad_medida || '')})
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 10px;">
+                        <label style="font-weight:bold;">Ajustar Cantidad (Opcional):</label>
+                        <input type="number" name="piezas_compradas" value="" step="0.1" min="0" max="10000"
+                            placeholder="Escribe solo si quieres CAMBIAR el stock..."
+                            style="border: 1px dashed #aaa;">
+                        <small style="color:#e74c3c;">* Si lo dejas vacío, se mantiene el stock exacto actual (${contenidoTotal}).</small>
+                    </div>
+                    
+                    <input type="hidden" name="cantidad_disponible" value="${datos.cantidad_disponible || 0}">
                 </div>`;
 
         } else if (seccion === 'empleados') {
             camposDinamicos.innerHTML = `
-                <label>Nombre:</label><input type="text" name="nombre_empleado" value="${datos.nombre_empleado || ''}" required>
+                <label>Nombre:</label><input type="text" name="nombre_empleado" value="${escapeHTML(datos.nombre_empleado || '')}" required>
                 <label>Rol:</label>
                 <select name="rol" required>
                     <option value="Cocinero" ${datos.rol === 'Cocinero' ? 'selected' : ''}>Cocinero</option>
                     <option value="Mesero" ${datos.rol === 'Mesero' ? 'selected' : ''}>Mesero</option>
                     <option value="Cajero" ${datos.rol === 'Cajero' ? 'selected' : ''}>Cajero</option>
                 </select>
-                <label>Sueldo Diario:</label><input type="number" name="sueldo" value="${datos.sueldo || ''}" required>
+                <label>Sueldo Diario:</label><input type="number" name="sueldo" value="${datos.sueldo || ''}" min="1" max="10000" required>
             `;
         } else if (seccion === 'mesas') {
             camposDinamicos.innerHTML = `
                 <label>Identificador de Mesa:</label>
-                <input type="text" name="numero_mesa" value="${datos.numero_mesa || ''}" placeholder="Ej. Mesa 1, Barra 2" required>
+                <input type="text" name="numero_mesa" value="${escapeHTML(datos.numero_mesa || '')}" placeholder="Ej. Mesa 1, Barra 2" required>
             `;
         }
     }
@@ -456,11 +514,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 9. ENVÍO DE FORMULARIO (POST/PUT)
     // ==========================================
     if(formulario) formulario.addEventListener('submit', async (e) => {
+        // Ignorar si el botón principal está oculto (caso Gastos Fijos)
+        const btnMain = formulario.querySelector('button[type="submit"]');
+        if(btnMain && btnMain.style.display === 'none') return;
+
         e.preventDefault();
         const formData = new FormData(formulario);
         const datos = Object.fromEntries(formData.entries());
         
-        // Procesar receta si es producto
         if (seccionActiva === 'productos') {
             datos.receta = [];
             document.querySelectorAll('.filaReceta').forEach(fila => {
@@ -496,98 +557,96 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    if(botonCancelar) botonCancelar.addEventListener('click', () => modal.classList.add('oculto'));
+    if(botonCancelar) botonCancelar.addEventListener('click', () => {
+        modal.classList.add('oculto');
+        // Restaurar botón principal al cerrar por si acaso
+        const btnMain = formulario.querySelector('button[type="submit"]');
+        if(btnMain) btnMain.style.display = 'block';
+    });
 
-    // ==========================================
-    // 10. MÓDULO DE FINANZAS (COMPLETO)
-    // ==========================================
     async function cargarFinanzas() {
         if(!listaFinanzasDias) return;
-        listaFinanzasDias.innerHTML = '<p style="text-align:center;">Analizando ingresos y egresos...</p>';
+        listaFinanzasDias.innerHTML = '<p style="text-align:center;">Cargando calendario financiero...</p>';
         
         try {
-            // A. Obtener Costo de Nómina Diaria
-            const resNomina = await fetch('/api/finanzas/nomina-diaria', { credentials: 'include' });
-            if(resNomina.ok) {
-                const dataNomina = await resNomina.json();
-                nominaDiariaGlobal = parseFloat(dataNomina.nomina_diaria) || 0;
-            }
-
-            // B. Obtener Resumen de Días
             const res = await fetch('/api/finanzas/resumen', { credentials: 'include' });
-            if(!res.ok) throw new Error("Error obteniendo resumen financiero");
+            if(!res.ok) throw new Error("Error obteniendo resumen");
             
             const dias = await res.json();
-            // Ordenar por fecha descendente
-            datosFinanzasCache = dias.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
-
-            renderizarFinanzas(datosFinanzasCache);
-            llenarSelectoresComparacion(datosFinanzasCache);
+            datosFinanzasCache = dias;
+            renderizarFinanzas(dias);
+            llenarSelectoresComparacion(dias);
 
         } catch (error) {
-            console.error('Error cargando finanzas:', error);
+            console.error('Error:', error);
             listaFinanzasDias.innerHTML = '<p style="color:red; text-align:center;">Error de conexión.</p>';
         }
     }
 
+    // MODIFICACIÓN: Renderizar Tarjetas Mini (Estilo Calendario)
     function renderizarFinanzas(dias) {
         listaFinanzasDias.innerHTML = '';
+        
+        listaFinanzasDias.style.display = 'grid';
+        listaFinanzasDias.style.gridTemplateColumns = 'repeat(auto-fill, minmax(110px, 1fr))';
+        listaFinanzasDias.style.gap = '15px';
+        listaFinanzasDias.style.padding = '10px';
+
         if (dias.length === 0) {
-            listaFinanzasDias.innerHTML = '<p style="text-align:center;">No hay registros financieros aún.</p>';
+            listaFinanzasDias.style.display = 'block';
+            listaFinanzasDias.innerHTML = '<p style="text-align:center;">Iniciando sistema... no hay registros previos.</p>';
             return;
         }
 
         dias.forEach(dia => {
             const ingresos = parseFloat(dia.total_ingresos);
-            const egresosManuales = parseFloat(dia.total_egresos);
-            const numVentas = parseInt(dia.num_ventas);
-            
-            // Egresos Totales = Manuales + Nómina Diaria
-            const egresosTotales = egresosManuales + nominaDiariaGlobal;
-            const utilidad = ingresos - egresosTotales;
-            
-            // Fecha Amigable
-            const fechaStr = new Date(dia.fecha).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+            const egresos = parseFloat(dia.total_egresos);
+            const utilidad = ingresos - egresos;
+            const esGanancia = utilidad >= 0;
+
+            const fechaObj = new Date(dia.fecha);
+            fechaObj.setMinutes(fechaObj.getMinutes() + fechaObj.getTimezoneOffset());
+            const diaNum = fechaObj.getDate();
+            const mes = fechaObj.toLocaleString('es-MX', { month: 'short' }).replace('.','');
 
             const card = document.createElement('div');
-            card.classList.add('pedido-item'); 
-            card.style.borderLeft = utilidad >= 0 ? '5px solid #2ecc71' : '5px solid #e74c3c';
-            card.style.cursor = 'pointer';
-
-            card.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="margin:0; text-transform:capitalize;">${fechaStr}</h3>
-                    <span style="font-size:0.8em; color:#777;">${numVentas} ventas</span>
-                </div>
-                <div style="margin:15px 0; text-align:center;">
-                    <div style="font-size:2em; font-weight:bold; color:${utilidad >= 0 ? '#27ae60' : '#e74c3c'}">
-                        $${utilidad.toFixed(2)}
-                    </div>
-                    <small style="color:#aaa;">Utilidad Neta</small>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.85em; color:#555; border-top:1px solid #eee; padding-top:10px;">
-                    <span style="color:#27ae60">Ing: $${ingresos.toFixed(0)}</span>
-                    <span style="color:#e74c3c">Egr: $${egresosTotales.toFixed(0)}</span>
-                </div>
+            card.style.cssText = `
+                background-color: #fff;
+                border-top: 5px solid ${esGanancia ? '#2ecc71' : '#e74c3c'};
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                padding: 15px 10px;
+                text-align: center;
+                cursor: pointer;
+                transition: transform 0.2s;
             `;
             
-            card.onclick = () => verDetalleDia(dia.fecha, ingresos, egresosManuales, utilidad);
+            card.innerHTML = `
+                <div style="font-size: 0.85em; color: #7f8c8d; text-transform: uppercase; letter-spacing:1px; margin-bottom:5px;">
+                    ${diaNum} ${escapeHTML(mes)}
+                </div>
+                <div style="font-size: 1.4em; font-weight: bold; color: ${esGanancia ? '#27ae60' : '#c0392b'};">
+                    $${Math.round(utilidad)}
+                </div>
+            `;
+
+            card.onmouseover = () => card.style.transform = 'translateY(-3px)';
+            card.onmouseout = () => card.style.transform = 'translateY(0)';
+            card.onclick = () => verDetalleDia(dia.fecha, ingresos, egresos, utilidad);
+
             listaFinanzasDias.appendChild(card);
         });
     }
 
-    // Llenar selects para comparar SOLO fechas existentes
     function llenarSelectoresComparacion(dias) {
         const selA = getEl('fechaA');
         const selB = getEl('fechaB');
-        if(!selA || !selB) return; // Si son inputs date nativos, esto fallará gracefully
+        if(!selA || !selB) return; 
 
-        // Si son <select>, los llenamos. Si son <input type="date">, el usuario elige manualmente.
-        // Asumiendo que pueden ser selects por la petición anterior:
         if(selA.tagName === 'SELECT') {
             const opts = dias.map(d => {
                 const f = d.fecha.split('T')[0];
-                return `<option value="${f}">${f}</option>`;
+                return `<option value="${escapeHTML(f)}">${escapeHTML(f)}</option>`;
             }).join('');
             selA.innerHTML = '<option value="">-- Seleccionar --</option>' + opts;
             selB.innerHTML = '<option value="">-- Seleccionar --</option>' + opts;
@@ -616,7 +675,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             listaMov.innerHTML = '';
             
-            // 1. Mostrar Nómina Prorrateada
             if(nominaDiariaGlobal > 0) {
                 const liNomina = document.createElement('li');
                 liNomina.style.borderLeft = '4px solid #e74c3c';
@@ -627,7 +685,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 listaMov.appendChild(liNomina);
             }
 
-            // 2. Mostrar Movimientos
             if(movimientos.length === 0 && nominaDiariaGlobal === 0) {
                 listaMov.innerHTML = '<p>Sin movimientos registrados.</p>';
             } else {
@@ -641,7 +698,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     li.innerHTML = `
                         <div style="display:flex; justify-content:space-between;">
-                            <span>${mov.descripcion}</span> 
+                            <span>${escapeHTML(mov.descripcion)}</span> 
                             <span style="color:${esIngreso ? '#27ae60' : '#e74c3c'}; font-weight:bold;">
                                 ${esIngreso ? '+' : '-'}$${parseFloat(mov.monto).toFixed(2)}
                             </span>
@@ -655,7 +712,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Botones Finanzas
     if(btnCerrarFinanzas) btnCerrarFinanzas.addEventListener('click', () => {
         modalDetalleFinanzas.classList.add('oculto');
         listaFinanzasDias.classList.remove('oculto');
@@ -672,7 +728,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if(formEgresoRapido) formEgresoRapido.addEventListener('submit', async (e) => {
         e.preventDefault();
         const descripcion = getEl('descEgreso').value;
-        const monto = getEl('montoEgreso').value;
+        const monto = parseFloat(getEl('montoEgreso').value);
+        
+        // Validación lógica extra para Gastos Extras
+        if (monto > 50000) {
+            alert('El monto máximo para un gasto extra es de $50,000.');
+            return;
+        }
 
         try {
             const res = await fetch('/api/finanzas/egreso', {
@@ -684,13 +746,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if(res.ok) {
                 modalGastoExtra.classList.add('oculto');
                 formEgresoRapido.reset();
-                cargarFinanzas(); // Recargar
+                cargarFinanzas(); 
                 alert('Gasto registrado con éxito.');
             }
         } catch(e) { console.error(e); }
     });
 
-    // Comparador
     if(btnEjecutarComparacion) btnEjecutarComparacion.addEventListener('click', () => {
         const fA = getEl('fechaA').value;
         const fB = getEl('fechaB').value;
@@ -722,24 +783,187 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     });
 
-    // Configuración Gastos Fijos
-    if(btnConfigurarGastosFijos) btnConfigurarGastosFijos.addEventListener('click', () => {
-        const nuevoMonto = prompt("Ingresa el monto diario fijo (Renta + Nómina + Servicios):", nominaDiariaGlobal);
-        if(nuevoMonto && !isNaN(nuevoMonto)) {
-            fetch('/api/finanzas/gastos-fijos', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ concepto: 'Diario Global', monto: parseFloat(nuevoMonto) })
-            }).then(() => {
-                alert("Monto actualizado.");
-                cargarFinanzas();
-            });
-        }
-    });
+    // ==========================================
+    // 8. CONFIGURACIÓN DE GASTOS FIJOS (REPARADO)
+    // ==========================================
+    const btnConfigGastos = document.getElementById('btnConfigurarGastosFijos'); 
+    
+    if (btnConfigGastos) {
+        btnConfigGastos.addEventListener('click', () => {
+            abrirModalGastosFijos();
+        });
+    }
 
-    // ==========================================
-    // 11. HISTORIAL DE PEDIDOS (ROBUSTO)
-    // ==========================================
+    async function abrirModalGastosFijos() {
+        // 1. Ocultar el botón de guardado PRINCIPAL del modal (el que usa el submit)
+        const btnGuardarPrincipal = formulario.querySelector('button[type="submit"]');
+        if(btnGuardarPrincipal) btnGuardarPrincipal.style.display = 'none';
+
+        // 2. Configurar Título y Mostrar Modal usando la estructura existente
+        tituloModal.textContent = "Configurar Gastos Fijos";
+        
+        // 3. Inyectar el contenido específico en camposDinamicos
+        if(!camposDinamicos) return;
+        
+        camposDinamicos.innerHTML = `
+            <div style="padding: 5px;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <p style="color:#7f8c8d; font-size: 0.9em; margin-top: 5px;">
+                        Estos montos se descontarán automáticamente al abrir caja cada día.
+                    </p>
+                </div>
+
+                <div style="background: white; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                    <h4 style="margin-top: 0; color: #2c3e50; margin-bottom: 15px; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px;">
+                        <ion-icon name="add-circle-outline" style="vertical-align: middle;"></ion-icon> Nuevo Gasto
+                    </h4>
+                    
+                    <div style="display: flex; gap: 10px; align-items: flex-end;">
+                        <div style="flex: 2;">
+                            <label style="font-size: 0.85em; font-weight: bold; color: #555; display: block; margin-bottom: 5px;">Concepto</label>
+                            <input type="text" id="conceptoGasto" placeholder="Ej. Renta, Internet..." maxlength="30" 
+                                style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #f9f9f9;">
+                        </div>
+                        <div style="flex: 1;">
+                            <label style="font-size: 0.85em; font-weight: bold; color: #555; display: block; margin-bottom: 5px;">Diario ($)</label>
+                            <input type="number" id="montoGasto" placeholder="0.00" min="0.01" max="50000" step="0.01" 
+                                style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #f9f9f9; font-weight: bold; color: #2c3e50;">
+                        </div>
+                        <button type="button" id="btnGuardarGastoFijo" 
+                            style="background: var(--primaryblue); color: white; border: none; border-radius: 5px; width: 42px; height: 42px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
+                            <ion-icon name="save" style="font-size: 1.4em;"></ion-icon>
+                        </button>
+                    </div>
+                    <small style="color: #95a5a6; margin-top: 8px; display: block; font-size: 0.8em;">* Máximo $50,000 por concepto.</small>
+                </div>
+
+                <h4 style="color: #2c3e50; margin-bottom: 10px;">📋 Gastos Activos</h4>
+                <div id="listaGastosFijosContainer" style="max-height: 200px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; background: #fff;">
+                    <div style="padding: 20px; text-align: center; color: #aaa;">Cargando...</div>
+                </div>
+            </div>
+        `;
+
+        // 4. Mostrar el modal
+        if(modal) modal.classList.remove('oculto');
+
+        // ===========================================
+        // LÓGICA INTERNA DE GASTOS FIJOS
+        // ===========================================
+
+        // B. FUNCIÓN CARGAR LISTA
+        const cargarLista = async () => {
+            const container = document.getElementById('listaGastosFijosContainer');
+            try {
+                const res = await fetch('/api/finanzas/gastos-fijos');
+                
+                if(!res.ok) throw new Error("Error en ruta");
+                const lista = await res.json();
+
+                if(lista.length === 0) {
+                    container.innerHTML = `
+                        <div style="padding: 30px; text-align: center; color: #bdc3c7;">
+                            <ion-icon name="wallet-outline" style="font-size: 3em; margin-bottom: 10px;"></ion-icon>
+                            <p>No tienes gastos fijos configurados.</p>
+                        </div>`;
+                    return;
+                }
+
+                let html = '<table style="width:100%; border-collapse:collapse;">';
+                lista.forEach(g => {
+                    html += `
+                        <tr style="border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 12px; color: #34495e; font-weight: 500;">
+                                ${escapeHTML(g.concepto)}
+                            </td>
+                            <td style="padding: 12px; font-weight: bold; color: #e74c3c; text-align: right;">
+                                -$${parseFloat(g.monto).toFixed(2)}
+                            </td>
+                            <td style="padding: 12px; text-align: right; width: 40px;">
+                                <button class="btnEliminarGF" data-id="${g.id_gasto}"
+                                    style="background: #fff0f0; color: #c0392b; border: 1px solid #e74c3c; border-radius: 4px; width: 30px; height: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center;" 
+                                    title="Eliminar">
+                                    <ion-icon name="trash-outline"></ion-icon>
+                                </button>
+                            </td>
+                        </tr>`;
+                });
+                html += '</table>';
+                container.innerHTML = html;
+
+                // Asignar eventos de eliminación
+                container.querySelectorAll('.btnEliminarGF').forEach(btn => {
+                    btn.addEventListener('click', () => eliminarGastoFijo(btn.dataset.id));
+                });
+
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = '<p style="color:red; text-align:center; padding:10px;">Error de conexión con el servidor.</p>';
+            }
+        };
+
+        // C. FUNCIÓN GUARDAR
+        const btnGuardar = document.getElementById('btnGuardarGastoFijo');
+        if(btnGuardar) {
+            btnGuardar.onclick = async () => {
+                const conceptoInput = document.getElementById('conceptoGasto');
+                const montoInput = document.getElementById('montoGasto');
+                
+                const concepto = conceptoInput.value.trim();
+                const monto = parseFloat(montoInput.value);
+                
+                // Validaciones
+                if(!concepto) {
+                    conceptoInput.style.border = "1px solid red";
+                    return alert("Falta el nombre del gasto.");
+                }
+                if(!monto || monto <= 0) {
+                    montoInput.style.border = "1px solid red";
+                    return alert("El monto debe ser positivo.");
+                }
+                if(monto > 50000) return alert("Monto máximo excedido ($50,000).");
+
+                try {
+                    const res = await fetch('/api/finanzas/gastos-fijos', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ concepto, monto })
+                    });
+
+                    if(res.ok) {
+                        conceptoInput.value = '';
+                        montoInput.value = '';
+                        conceptoInput.style.border = "1px solid #ccc"; 
+                        montoInput.style.border = "1px solid #ccc";
+                        cargarLista(); 
+                    } else {
+                        const err = await res.json();
+                        alert(err.message || "Error al guardar");
+                    }
+                } catch(e) { alert("Error de conexión"); }
+            };
+        }
+
+        // D. FUNCIÓN BORRAR (Interna)
+        const eliminarGastoFijo = async (id) => {
+            if(!confirm('¿Eliminar este gasto automático?')) return;
+            try {
+                const res = await fetch(`/api/finanzas/gastos-fijos/${id}`, { method: 'DELETE' });
+                if(res.ok) {
+                    cargarLista();
+                } else {
+                    alert("No se pudo eliminar.");
+                }
+            } catch(e) { 
+                console.error(e);
+                alert("Error al conectar."); 
+            }
+        };
+
+        // Cargar al abrir
+        cargarLista();
+    }
+
     async function cargarPedidosCompletados() {
         if(!listaPedidosCompletados) return;
         listaPedidosCompletados.classList.remove('oculto');
@@ -748,8 +972,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const res = await fetch('/api/pedidos/completados', { credentials: 'include' });
-            
-            // Verificamos si la respuesta es JSON válido
             const text = await res.text();
             let pedidos = [];
             try {
@@ -770,7 +992,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const div = document.createElement('div');
                 div.classList.add('pedido-item');
                 div.innerHTML = `
-                    <h3>${p.mesa}</h3>
+                    <h3>${escapeHTML(p.mesa)}</h3>
                     <p>Total: $${parseFloat(p.total_calculado).toFixed(2)}</p>
                     <small>${new Date(p.fecha_creacion).toLocaleString()}</small>
                 `;
@@ -808,7 +1030,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const listaProd = getEl('detalleProductosLista');
             data.productos.forEach(prod => {
                 const li = document.createElement('li');
-                li.innerHTML = `${prod.cantidad}x ${prod.nombre} <span style="float:right">$${prod.precio_en_pedido}</span>`;
+                li.innerHTML = `${prod.cantidad}x ${escapeHTML(prod.nombre)} <span style="float:right">$${prod.precio_en_pedido}</span>`;
                 listaProd.appendChild(li);
             });
 
@@ -823,8 +1045,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     li.style.padding = "5px";
                     li.style.marginBottom = "5px";
                     li.innerHTML = `
-                        <b>${ing.nombre}</b>
-                        <span style="float:right; color:#c0392b">-${parseFloat(ing.total_gastado).toFixed(2)} ${ing.unidad_medida}</span>
+                        <b>${escapeHTML(ing.nombre)}</b>
+                        <span style="float:right; color:#c0392b">-${parseFloat(ing.total_gastado).toFixed(2)} ${escapeHTML(ing.unidad_medida)}</span>
                     `;
                     listaIng.appendChild(li);
                 });
@@ -848,9 +1070,6 @@ document.addEventListener('DOMContentLoaded', () => {
         cargarPedidosCompletados();
     });
 
-    // ==========================================
-    // 12. GENERACIÓN DE QR
-    // ==========================================
     if(btnExportarQR) btnExportarQR.addEventListener('click', () => {
         const canvas = getEl('qrCanvas');
         if(!canvas) return alert("Falta canvas QR en HTML");
@@ -861,7 +1080,6 @@ document.addEventListener('DOMContentLoaded', () => {
             nombre: 'Restaurante YA'
         });
 
-        // Asegurarse de que QRious esté cargado
         if(typeof QRious === 'undefined') return alert("Librería QRious no cargada.");
 
         const qr = new QRious({

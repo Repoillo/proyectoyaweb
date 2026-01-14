@@ -1,4 +1,15 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. FUNCIÓN DE SEGURIDAD (Blindaje contra virus/XSS)
+    function escapeHTML(str) {
+        if (!str && str !== 0) return '';
+        return str.toString()
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     const listaMesas = document.getElementById('listaMesas');
     const botonSalir = document.querySelector('.botonSalir');
 
@@ -82,28 +93,27 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.borderLeft = `8px solid ${colorBorde}`;
             if (claseAnimacion) card.classList.add(claseAnimacion);
 
+            // AQUI SE APLICA EL BLINDAJE CON escapeHTML
             card.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="font-size: 1.5em; margin:0;">${mesa.numero_mesa}</h3>
-                    ${esOcupada ? iconoEstadoHTML : ''}
+                <div style="text-align: center; margin-bottom: 10px;">
+                    <h3 style="font-size: 2em; margin:0; color: #2c3e50;">${escapeHTML(mesa.numero_mesa)}</h3>
                 </div>
-                
-                <p style="color: ${esOcupada ? '#555' : '#2ecc71'}; font-weight: bold; margin-top:10px;">
-                    ${esOcupada ? 'OCUPADA' : 'LIBRE'}
-                </p>
+
+                <div style="display:flex; justify-content:center; margin-bottom: 15px;">
+                    ${esOcupada ? iconoEstadoHTML : '<div style="color:#2ecc71; font-weight:bold;">LIBRE</div>'}
+                </div>
 
                 ${esOcupada ? `
-                    <div style="background: #f9f9f9; padding: 10px; border-radius: 5px; margin: 10px 0;">
-                        <span style="display:block; font-size: 0.8em; color: #666;">PIN Cliente:</span>
-                        <span style="font-size: 1.5em; font-weight: bold; color: #333; letter-spacing: 2px;">${mesa.codigo_sesion}</span>
+                    <div style="background: #f4f6f7; padding: 10px; border-radius: 8px; text-align: center;">
+                        <span style="display:block; font-size: 0.8em; color: #7f8c8d; letter-spacing: 1px;">CÓDIGO CLIENTE</span>
+                        <span style="font-size: 1.8em; font-weight: bold; color: #333; letter-spacing: 3px;">${escapeHTML(mesa.codigo_sesion)}</span>
                     </div>
-                    <button class="boton botonEliminar btnLiberar" data-id="${mesa.id_mesa}" style="width: 100%; padding: 15px;">
-                        <ion-icon name="lock-open-outline"></ion-icon> Liberar & Cerrar
+                    <button class="boton botonEliminar btnLiberar" data-id="${mesa.id_mesa}" style="width: 100%; margin-top: 15px; padding: 12px; font-size: 1em;">
+                        <ion-icon name="lock-open-outline"></ion-icon> Liberar
                     </button>
                 ` : `
-                    <div style="margin: 15px 0; color: #ccc; font-style: italic;">Sin clientes</div>
-                    <button class="boton botonAgregar btnOcupar" data-id="${mesa.id_mesa}" style="width: 100%; padding: 15px;">
-                        <ion-icon name="key-outline"></ion-icon> Ocupar Mesa
+                    <button class="boton botonAgregar btnOcupar" data-id="${mesa.id_mesa}" style="width: 100%; padding: 15px; margin-top: auto;">
+                        <ion-icon name="key-outline"></ion-icon> Ocupar
                     </button>
                 `}
             `;

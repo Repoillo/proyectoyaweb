@@ -92,8 +92,12 @@ app.post('/api/auth/verify-code', async (req, res) => {
         res.status(500).json({ message: 'Error al verificar código.' });
     }
 });
+
 app.post('/api/auth/register', async (req, res) => {
-    const { nombre_usuario, correo_usuario, contra, rol } = req.body;
+    // 1. Desestructurar y Limpiar espacios
+    let { nombre_usuario, correo_usuario, contra, rol } = req.body;
+    nombre_usuario = nombre_usuario ? nombre_usuario.trim() : '';
+    correo_usuario = correo_usuario ? correo_usuario.trim().toLowerCase() : ''; // Correos siempre minúsculas
     
     const id_restaurante = req.session.restauranteContexto;
 
@@ -101,16 +105,29 @@ app.post('/api/auth/register', async (req, res) => {
         return res.status(403).json({ message: 'Primero debes ingresar el código del restaurante.' });
     }
 
+    if (!nombre_usuario || nombre_usuario.length < 3 || nombre_usuario.length > 50) {
+        return res.status(400).json({ message: 'El nombre debe tener entre 3 y 50 caracteres.' });
+    }
     const nombreRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
     if (!nombreRegex.test(nombre_usuario)) {
-        return res.status(400).json({ message: 'El nombre solo puede contener letras.' });
+        return res.status(400).json({ message: 'El nombre solo puede contener letras (sin símbolos raros).' });
     }
 
-    if (contra.length < 6) {
-        return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres.' });
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(correo_usuario)) {
+        return res.status(400).json({ message: 'Ingresa un correo electrónico válido (ej: nombre@dominio.com).' });
+    }
+
+    if (contra.length < 8) {
+        return res.status(400).json({ message: 'La contraseña es muy corta (mínimo 8 caracteres).' });
+    }
+    const tieneNumero = /\d/; // Busca al menos un dígito
+    if (!tieneNumero.test(contra)) {
+        return res.status(400).json({ message: 'La contraseña debe incluir al menos un número para mayor seguridad.' });
     }
 
     const rolesPermitidos = ['cocinero', 'mesero'];
+    
     const rolFinal = rolesPermitidos.includes(rol) ? rol : 'cocinero';
 
     try {
@@ -122,11 +139,11 @@ app.post('/api/auth/register', async (req, res) => {
             [nombre_usuario, correo_usuario, contra_hash, id_restaurante, rolFinal]
         );
         
-        res.status(201).json({ message: 'Registrado exitosamente en el restaurante actual.' });
+        res.status(201).json({ message: 'Usuario registrado exitosamente.' });
 
     } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY' && error.message.includes('correo_usuario')) {
-             return res.status(409).json({ message: 'El correo electrónico ya está en uso.' });
+        if (error.code === 'ER_DUP_ENTRY') {
+             return res.status(409).json({ message: 'Este correo ya está registrado en el sistema.' });
         }
         console.error('Error al registrar usuario:', error);
         res.status(500).json({ message: 'Error interno al registrar.' });
@@ -241,6 +258,9 @@ app.post('/api/productos', requireAuth, requireOwner, async (req, res) => {
     await connection.beginTransaction();
 
     try {
+        if (parseFloat(precio_venta) <= 0 || parseFloat(precio_venta) > 10000) {
+        return res.status(400).json({ message: 'Precio inválido (0 - $10,000).' });
+    }
         const [existente] = await connection.query(
             `SELECT id_producto, estado FROM productos 
              WHERE nombre = ? AND id_restaurante = ?`,
@@ -450,16 +470,65 @@ app.post('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
 });
 
 app.put('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => {
+    const connection = await pool.getConnection();
     try {
+        
         const { id } = req.params;
-        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, piezas_compradas } = req.body;
+        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, piezas_compradas, cantidad_disponible } = req.body;
+        const stockInput = parseFloat(piezas_compradas);
+        const costoInput = parseFloat(costo_compra);
+
+        if (stockInput < 0) return res.status(400).json({ message: 'No puedes tener stock negativo.' });
+        if (stockInput > 10000) return res.status(400).json({ message: 'Stock excesivo (Máx 10,000 unidades).' });
+        
+        if (costoInput < 0) return res.status(400).json({ message: 'El costo no puede ser negativo.' });
+        if (costoInput > 100000) return res.status(400).json({ message: 'Costo unitario excesivo (Máx $100,000).' });
         const id_restaurante = req.session.restauranteId;
 
-        const costo_unitario_calculado = parseFloat(costo_compra) / parseFloat(cantidad_por_unidad);
+        await connection.beginTransaction();
 
-        const stock_total = parseFloat(piezas_compradas) * parseFloat(cantidad_por_unidad);
+        // 1. Obtener datos anteriores para comparar stock
+        const [previo] = await connection.query(
+            "SELECT stock, costo_unitario FROM ingredientes WHERE id_ingrediente = ?", 
+            [id]
+        );
         
-        await pool.query(
+        let nuevoStock = 0;
+        let costoUnitarioCalculado = 0;
+
+        // Lógica de cálculo blindada contra NaNs
+        const cantPorUnidad = parseFloat(cantidad_por_unidad) || 1;
+        const costoCompra = parseFloat(costo_compra) || 0;
+
+        if (costoCompra > 0 && cantPorUnidad > 0) {
+            costoUnitarioCalculado = costoCompra / cantPorUnidad;
+        } else if (previo.length > 0) {
+            costoUnitarioCalculado = previo[0].costo_unitario; 
+        }
+
+        if (piezas_compradas !== undefined && piezas_compradas !== "") {
+
+            nuevoStock = parseFloat(piezas_compradas) * cantPorUnidad;
+        } else {
+
+            nuevoStock = parseFloat(cantidad_disponible);
+        }
+
+        if (previo.length > 0) {
+            const stockAnterior = parseFloat(previo[0].stock);
+            const diferencia = nuevoStock - stockAnterior;
+            
+            if (diferencia > 0 && costoUnitarioCalculado > 0) {
+                const montoGasto = diferencia * costoUnitarioCalculado;
+                
+                await connection.query(
+                    `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
+                     VALUES (?, 'egreso', ?, ?, NOW())`,
+                    [id_restaurante, montoGasto, `Compra Stock: ${nombre} (+${(diferencia/cantPorUnidad).toFixed(1)} pzas)`]
+                );
+            }
+        }
+        await connection.query(
             `UPDATE ingredientes 
              SET nombre = ?, 
                  unidad_medida = ?, 
@@ -467,14 +536,21 @@ app.put('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => 
                  stock = ?, 
                  cantidad_por_unidad = ?
              WHERE id_ingrediente = ? AND id_restaurante = ?`,
-            [nombre, unidad_medida, costo_unitario_calculado, stock_total, cantidad_por_unidad, id, id_restaurante]
+            [nombre, unidad_medida, costoUnitarioCalculado, nuevoStock, cantPorUnidad, id, id_restaurante]
         );
-        res.json({ message: 'Ingrediente actualizado exitosamente.' });
+
+        await connection.commit();
+        res.json({ message: 'Ingrediente actualizado y gasto registrado (si aplicó).' });
+
     } catch(error) {
+        await connection.rollback();
         console.error('Error al actualizar ingrediente:', error);
-        res.status(500).json({message: 'Error al actualizar el ingrediente.'});
+        res.status(500).json({message: 'Error al actualizar: ' + error.message});
+    } finally {
+        connection.release();
     }
 });
+
 app.delete('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
@@ -729,7 +805,7 @@ app.get('/api/pedidos/completados', requireAuth, requireOwner, async (req, res) 
         const [pedidos] = await pool.query(
             `SELECT * FROM pedidos 
              WHERE id_restaurante = ? 
-             AND (estado = 'completado' OR estado = 'inactivo')
+             AND estado = 'inactivo' 
              ORDER BY fecha_creacion DESC 
              LIMIT 50`,
             [req.session.restauranteId]
@@ -840,12 +916,11 @@ app.get('/api/pedidos/completados/:id', requireAuth, requireOwner, async (req, r
         res.status(500).json({ message: 'Error al cargar los detalles del pedido.' });
     }
 });
-// PUT /api/pedidos/archivar-completados (ACTUALIZADA)
+// MODIFICACIÓN: Archivar SOLO lo que ya se cerró (Protección contra dueños rápidos)
 app.put('/api/pedidos/archivar-completados', requireAuth, requireOwner, async (req, res) => {
     try {
         const id_restaurante = req.session.restauranteId;
         
-        // CAMBIO: Ahora movemos de 'inactivo' (historial visible) a 'archivado' (oculto)
         const [result] = await pool.query(
             `UPDATE pedidos 
              SET estado = 'archivado' 
@@ -854,7 +929,7 @@ app.put('/api/pedidos/archivar-completados', requireAuth, requireOwner, async (r
         );
 
         res.json({ 
-            message: 'Historial limpiado exitosamente.', 
+            message: 'Historial limpiado (solo mesas cerradas).', 
             pedidosArchivados: result.affectedRows 
         });
 
@@ -1015,6 +1090,7 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
         
         await connection.beginTransaction();
 
+        // 1. Obtener el nombre de la mesa antes de liberarla
         const [mesaInfo] = await connection.query(
             "SELECT numero_mesa FROM mesas WHERE id_mesa = ?", 
             [id]
@@ -1023,21 +1099,43 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
         if (mesaInfo.length > 0) {
             const nombreMesa = mesaInfo[0].numero_mesa;
 
-            await connection.query(
-                `UPDATE pedidos 
-                 SET estado = 'inactivo' 
+            // 2. BUSCAR EL PEDIDO ACTIVO (El que vamos a cobrar)
+            // Buscamos pedidos que no estén ya cerrados
+            const [pedidosActivos] = await connection.query(
+                `SELECT id_pedido, total_calculado 
+                 FROM pedidos 
                  WHERE mesa = ? AND id_restaurante = ? 
                  AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
                 [nombreMesa, id_restaurante]
             );
+
+            // SI ENCONTRAMOS UN PEDIDO PENDIENTE, LO COBRAMOS
+            if (pedidosActivos.length > 0) {
+                const pedido = pedidosActivos[0];
+                
+                // A. Registrar el Ingreso en Finanzas
+                const descripcion = `Ingreso Pedido #${pedido.id_pedido} (${nombreMesa})`;
+                await connection.query(
+                    `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
+                     VALUES (?, 'ingreso', ?, ?, NOW())`,
+                    [id_restaurante, pedido.total_calculado, descripcion]
+                );
+
+                // B. Cerrar el pedido (Pasar a inactivo)
+                await connection.query(
+                    "UPDATE pedidos SET estado = 'inactivo' WHERE id_pedido = ?",
+                    [pedido.id_pedido]
+                );
+            }
         }
+
         await connection.query(
             "UPDATE mesas SET estado = 'libre', codigo_sesion = NULL WHERE id_mesa = ? AND id_restaurante = ?",
             [id, id_restaurante]
         );
         
         await connection.commit();
-        res.json({ message: 'Mesa liberada y pedido cerrado exitosamente.' });
+        res.json({ message: 'Mesa liberada, pedido cerrado y venta registrada.' });
 
     } catch (error) {
         await connection.rollback();
@@ -1048,30 +1146,40 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
     }
 });
 
-// 2. ENVIAR PEDIDO (Corregido: Busca por numero_mesa)
+// 2. ENVIAR PEDIDO (Versión V2: Solo requiere PIN y corrige items sueltos)
 app.post('/api/movil/pedido', async (req, res) => {
-    let { numero_mesa, pin, items } = req.body; // Usamos let para poder modificarlo
+    let { pin, items } = req.body; // Ya no leemos 'numero_mesa' del body, lo buscaremos por PIN
     const id_restaurante = 1; 
 
-    if (!numero_mesa.toString().toLowerCase().startsWith('mesa')) {
-        numero_mesa = `Mesa ${numero_mesa}`;
+    // --- CORRECCIÓN DEL ERROR "items is not iterable" ---
+    if (!items) {
+        return res.status(400).json({ message: "Faltan los productos (items)." });
     }
+    // Si items NO es un array (es un objeto suelto), lo envolvemos en corchetes
+    if (!Array.isArray(items)) {
+        items = [items];
+    }
+    // ----------------------------------------------------
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-        // A. VALIDACIÓN: Usamos 'numero_mesa' en el WHERE en lugar de 'id_mesa'
+        // A. BUSCAR LA MESA USANDO SOLO EL PIN
+        // Buscamos qué mesa tiene este PIN activo en este momento
         const [mesaCheck] = await connection.query(
-            `SELECT * FROM mesas 
-             WHERE numero_mesa = ? AND id_restaurante = ? AND estado = 'ocupada' AND codigo_sesion = ?`,
-            [numero_mesa, id_restaurante, pin]
+            `SELECT numero_mesa FROM mesas 
+             WHERE codigo_sesion = ? AND id_restaurante = ? AND estado = 'ocupada'`,
+            [pin, id_restaurante]
         );
 
         if (mesaCheck.length === 0) {
             await connection.rollback();
-            return res.status(401).json({ message: 'Mesa o PIN incorrectos.' });
+            return res.status(401).json({ message: 'PIN incorrecto o sesión caducada.' });
         }
+
+        // ¡Aquí obtenemos la mesa real desde la base de datos!
+        const nombreMesaReal = mesaCheck[0].numero_mesa;
 
         // B. CÁLCULO TOTAL
         let total_calculado = 0;
@@ -1082,33 +1190,45 @@ app.post('/api/movil/pedido', async (req, res) => {
                 'SELECT precio_venta FROM productos WHERE id_producto = ?', 
                 [item.id_producto]
             );
+            if (item.cantidad <= 0 || item.cantidad > 50) {
+                await connection.rollback(); 
+                return res.status(400).json({ message: `Cantidad inválida para el producto ${item.id_producto} (Máx 50).` });
+            }
             if (prod.length > 0) {
                 const precio = parseFloat(prod[0].precio_venta);
-                total_calculado += precio * item.cantidad;
-                detallesInsertar.push([null, item.id_producto, item.cantidad, precio]);
+                const cantidad = parseInt(item.cantidad);
+                
+                total_calculado += precio * cantidad;
+                // Guardamos para insertar después
+                detallesInsertar.push([null, item.id_producto, cantidad, precio]);
             }
         }
 
-        // C. CREAR PEDIDO
+        // C. CREAR PEDIDO ASOCIADO A ESA MESA
         const [pedidoResult] = await connection.query(
             `INSERT INTO pedidos (id_restaurante, mesa, responsable_pedido, total_calculado, estado, fecha_creacion)
              VALUES (?, ?, 'App Cliente', ?, 'sin ver', NOW())`,
-            [id_restaurante, numero_mesa, total_calculado] // Guardamos el número de mesa directo
+            [id_restaurante, nombreMesaReal, total_calculado]
         );
         
         const id_pedido = pedidoResult.insertId;
 
         // D. INSERTAR DETALLES
-        for (const det of detallesInsertar) {
-            det[0] = id_pedido; 
+        if (detallesInsertar.length > 0) {
+            // Asignamos el id_pedido a cada fila
+            const filasFinales = detallesInsertar.map(fila => {
+                fila[0] = id_pedido; 
+                return fila;
+            });
+
             await connection.query(
                 `INSERT INTO pedido_detalles (id_pedido, id_producto, cantidad, precio_en_pedido) VALUES ?`,
-                [[det]]
+                [filasFinales]
             );
         }
 
         await connection.commit();
-        res.status(201).json({ message: 'Pedido enviado.', id_pedido });
+        res.status(201).json({ message: 'Pedido enviado.', id_pedido, mesa: nombreMesaReal });
 
     } catch (error) {
         await connection.rollback();
@@ -1118,25 +1238,80 @@ app.post('/api/movil/pedido', async (req, res) => {
         connection.release();
     }
 });
+// MODIFICACIÓN: Resumen Financiero con "AUTO-APERTURA DE DÍA"
 app.get('/api/finanzas/resumen', requireAuth, requireOwner, async (req, res) => {
+    const connection = await pool.getConnection();
     try {
-        // Agrupamos movimientos por fecha (solo año-mes-dia)
-        const [dias] = await pool.query(
+        const id_restaurante = req.session.restauranteId;
+        
+        // --- LÓGICA DE APERTURA AUTOMÁTICA DE DÍA ---
+        // 1. Verificamos si ya existe ALGO registrado hoy (cualquier movimiento)
+        const [checkHoy] = await connection.query(
+            "SELECT id_movimiento FROM movimientos_financieros WHERE id_restaurante = ? AND DATE(fecha) = CURDATE() LIMIT 1",
+            [id_restaurante]
+        );
+
+        // 2. Si NO hay registros hoy, "Abrimos el día" cobrando lo fijo
+        if (checkHoy.length === 0) {
+            await connection.beginTransaction();
+
+            console.log(`📅 Iniciando apertura automática de día para restaurante ${id_restaurante}...`);
+
+            // A. Calcular Nómina Diaria (Suma de sueldos activos / 30)
+            const [nomina] = await connection.query(
+                "SELECT SUM(sueldo) as total FROM empleados WHERE id_restaurante = ? AND estado = 'activo'",
+                [id_restaurante]
+            );
+            const nominaMensual = parseFloat(nomina[0].total) || 0;
+            const nominaDiaria = nominaMensual / 30;
+
+            if (nominaDiaria > 0) {
+                await connection.query(
+                    `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
+                     VALUES (?, 'egreso', ?, 'Nómina Diaria (Automática)', NOW())`,
+                    [id_restaurante, nominaDiaria]
+                );
+            }
+
+            // B. Cargar Otros Gastos Fijos Configurados (Agua, Renta, etc.)
+            const [fijos] = await connection.query(
+                "SELECT concepto, monto FROM config_gastos_diarios WHERE id_restaurante = ?",
+                [id_restaurante]
+            );
+            
+            for (const gasto of fijos) {
+                await connection.query(
+                    `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
+                     VALUES (?, 'egreso', ?, ?, NOW())`,
+                    [id_restaurante, gasto.monto, `Gasto Fijo: ${gasto.concepto}`]
+                );
+            }
+
+            await connection.commit();
+            console.log("✅ Día iniciado: Gastos fijos aplicados.");
+        }
+        
+        // --- 3. OBTENER RESUMEN (Ahora sí, la BD tiene la verdad completa) ---
+        const [dias] = await connection.query(
             `SELECT 
                 DATE(fecha) as fecha, 
                 SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END) as total_ingresos,
-                SUM(CASE WHEN tipo = 'egreso' THEN monto ELSE 0 END) as total_egresos,
-                COUNT(CASE WHEN tipo = 'ingreso' THEN 1 END) as num_ventas
+                SUM(CASE WHEN tipo = 'egreso' THEN monto ELSE 0 END) as total_egresos
              FROM movimientos_financieros 
              WHERE id_restaurante = ?
              GROUP BY DATE(fecha)
              ORDER BY fecha DESC`,
-            [req.session.restauranteId]
+            [id_restaurante]
         );
+        
         res.json(dias);
+
     } catch (error) {
+        if(connection) await connection.rollback();
         console.error(error);
         res.status(500).json({ message: 'Error al cargar finanzas.' });
+    } finally {
+        if(connection) connection.release();
     }
 });
 
@@ -1175,24 +1350,32 @@ app.get('/api/finanzas/detalle/:fecha', requireAuth, requireOwner, async (req, r
     }
 });
 
-// 4. POST Registrar Egreso Manual
 app.post('/api/finanzas/egreso', requireAuth, requireOwner, async (req, res) => {
     try {
         const { descripcion, monto } = req.body;
-        // Validación básica
-        if (!monto || parseFloat(monto) <= 0) return res.status(400).json({message: 'Monto inválido'});
+        const montoFloat = parseFloat(monto);
+
+        // VALIDACIÓN DE SEGURIDAD FINANCIERA
+        if (!montoFloat || montoFloat <= 0) {
+            return res.status(400).json({ message: 'El monto debe ser mayor a 0.' });
+        }
+        if (montoFloat > 50000) { // Límite de $50,000 por movimiento
+            return res.status(400).json({ message: 'Monto sospechoso. Para gastos mayores a $50,000, regístralos desglosados.' });
+        }
+        if (!descripcion || descripcion.trim().length < 3) {
+            return res.status(400).json({ message: 'Escribe una descripción válida.' });
+        }
 
         await pool.query(
             `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
              VALUES (?, 'egreso', ?, ?, NOW())`,
-            [req.session.restauranteId, parseFloat(monto), descripcion]
+            [req.session.restauranteId, montoFloat, descripcion]
         );
         res.status(201).json({ message: 'Egreso registrado.' });
     } catch (error) {
         res.status(500).json({ message: 'Error al guardar egreso.' });
     }
 });
-// --- EN app.js ---
 
 app.post('/api/movil/cuenta', async (req, res) => {
     let { numero_mesa, metodo_pago } = req.body; 
@@ -1237,28 +1420,53 @@ app.post('/api/movil/cuenta', async (req, res) => {
         res.status(500).json({ message: 'Error al procesar solicitud.' });
     }
 });
-// 1. CONFIGURAR GASTOS FIJOS (Guardar lo que siempre se cobra)
-app.post('/api/finanzas/gastos-fijos', requireAuth, async (req, res) => {
+
+app.post('/api/finanzas/gastos-fijos', requireAuth, requireOwner, async (req, res) => {
     const { concepto, monto } = req.body;
+    const montoFloat = parseFloat(monto);
+    const id_restaurante = req.session.restauranteId;
+
+    if (!montoFloat || montoFloat <= 0) {
+        return res.status(400).json({ message: 'El monto debe ser un número positivo mayor a 0.' });
+    }
+
+    if (montoFloat > 50000) { 
+        return res.status(400).json({ message: 'El monto diario parece excesivo (Máx $50,000). Revisa si no pusiste el mensual por error.' });
+    }
+
+    // 3. Concepto Obligatorio
+    if (!concepto || concepto.trim().length === 0) {
+        return res.status(400).json({ message: 'Debes escribir el nombre del gasto (ej. Luz, Renta).' });
+    }
+
     try {
         await pool.query(
             "INSERT INTO config_gastos_diarios (id_restaurante, concepto, monto) VALUES (?, ?, ?)",
-            [req.session.restauranteId, concepto, monto]
+            [id_restaurante, concepto, montoFloat]
         );
-        res.json({ message: 'Gasto fijo agregado.' });
-    } catch (e) { res.status(500).json({ message: 'Error.' }); }
+        res.status(201).json({ message: 'Gasto fijo agregado correctamente.' });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error al guardar la configuración.' });
+    }
 });
 
-app.get('/api/finanzas/gastos-fijos', requireAuth, async (req, res) => {
-    const [rows] = await pool.query("SELECT * FROM config_gastos_diarios WHERE id_restaurante = ?", [req.session.restauranteId]);
-    res.json(rows);
+// A. VER la lista de gastos fijos
+app.get('/api/finanzas/gastos-fijos', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [gastos] = await pool.query("SELECT * FROM config_gastos_diarios WHERE id_restaurante = ?", [req.session.restauranteId]);
+        res.json(gastos);
+    } catch (error) { res.status(500).json({ message: 'Error.' }); }
 });
 
-app.delete('/api/finanzas/gastos-fijos/:id', requireAuth, async (req, res) => {
-    await pool.query("DELETE FROM config_gastos_diarios WHERE id_gasto_fijo = ?", [req.params.id]);
-    res.json({ message: 'Borrado.' });
+// B. BORRAR un gasto fijo
+app.delete('/api/finanzas/gastos-fijos/:id', requireAuth, requireOwner, async (req, res) => {
+    try {
+        await pool.query("DELETE FROM config_gastos_diarios WHERE id_gasto = ? AND id_restaurante = ?", [req.params.id, req.session.restauranteId]);
+        res.json({ message: 'Eliminado.' });
+    } catch (error) { res.status(500).json({ message: 'Error.' }); }
 });
-
 // 2. OBTENER RESUMEN DEL DÍA (Con Sueldos y Gastos Fijos Automáticos)
 app.get('/api/finanzas/dia', requireAuth, async (req, res) => {
     const { fecha } = req.query; // Formato YYYY-MM-DD

@@ -32,10 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (res.ok) {
-                // Éxito: Ocultamos el modal y mostramos el nombre del local si quieres
                 gatekeeperModal.classList.add('oculto');
-                // Opcional: poner el nombre del restaurante en algún lado
-                document.querySelector('.overlaypanel h1').innerText = `¡Hola, equipo de ${data.nombre}!`;
+                const titulo = document.querySelector('.overlaypanel h1');
+                if(titulo) titulo.innerText = "Bienvenido";
             } else {
                 gatekeeperError.textContent = data.message || 'Código incorrecto.';
             }
@@ -45,16 +44,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- 2. VERIFICAR SI YA HAY CONTEXTO AL CARGAR ---
-    // Si el usuario refresca la página, no queremos que le pida el código otra vez si la sesión sigue viva.
     async function verificarContextoInicial() {
         try {
-            // Usamos el endpoint de status. Si devuelveloggedIn o al menos contexto, pasamos.
-            // Nota: He modificado el endpoint status en app.js para devolver info aunque no esté logueado usuario,
-            // pero si tiene contexto de restaurante. Si no, dará error y mostramos modal.
-            
-            // Truco: Intentamos verificar sesión. Si falla (401), el modal se queda.
-            // Si funciona, se quita.
             const res = await fetch('/api/auth/status', { credentials: 'include' });
             const data = await res.json();
 
@@ -66,13 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             } 
             
-            // Si no está logueado pero la sesión tiene restauranteContexto (verificamos si hay cookie válida)
-            // Esto es difícil de saber sin un endpoint específico, así que por seguridad:
-            // SIEMPRE mostramos el modal al cargar index.html, a menos que el login automático salte.
-            // PERO, si el usuario acaba de meter el código, no recargamos.
-            
-            // Simplificación: El modal empieza visible (sin clase oculto).
-            // Solo si el status devuelve que hay un usuario activo, redirigimos.
             
         } catch (e) {
             console.log("Esperando código de restaurante...");
@@ -86,11 +70,34 @@ document.addEventListener('DOMContentLoaded', () => {
     formcuenta.addEventListener('submit', async (e) => {
         e.preventDefault();
         registererror.textContent = '';
+        registererror.style.color = 'red'; 
         
-        const nombre = document.getElementById('registername').value;
-        const correo = document.getElementById('registeremail').value;
+        const nombre = document.getElementById('registername').value.trim();
+        const correo = document.getElementById('registeremail').value.trim();
         const contrasena = document.getElementById('registerpassword').value;
         const rol = document.getElementById('registerrol').value;
+
+
+        const nombreRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
+        if (nombre.length < 3 || !nombreRegex.test(nombre)) {
+            registererror.textContent = 'El nombre solo debe contener letras (min 3).';
+            return;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(correo)) {
+            registererror.textContent = 'El correo no parece real (falta @ o dominio).';
+            return;
+        }
+
+        if (contrasena.length < 8) {
+            registererror.textContent = 'La contraseña debe tener al menos 8 caracteres.';
+            return;
+        }
+        if (!/\d/.test(contrasena)) { 
+            registererror.textContent = 'Agrega al menos un número a tu contraseña.';
+            return;
+        }
 
         try {
             const res = await fetch('/api/auth/register', {
