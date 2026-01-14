@@ -49,38 +49,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.classList.add('pedido-item'); 
             
-            // LÓGICA DE ICONOS DE ESTADO
             let iconoEstadoHTML = '';
             let claseAnimacion = '';
+            let colorBorde = '#2ecc71'; // Verde (Libre) por defecto
 
             if (esOcupada) {
-                // 1. ¿Pidieron la cuenta?
+                // CASO 1: PIDIERON LA CUENTA (¡PRIORIDAD!)
                 if (mesa.estado_pedido === 'por_pagar') {
-                    claseAnimacion = 'parpadeo'; // CSS que agregaremos abajo
+                    claseAnimacion = 'parpadeo'; 
+                    colorBorde = '#f39c12'; // Naranja Alerta
+                    
+                    // Texto claro y directo
                     if (mesa.metodo_pago === 'tarjeta') {
-                        iconoEstadoHTML = `<div class="icono-estado tarjeta"><ion-icon name="card-outline"></ion-icon> TARJETA</div>`;
+                        iconoEstadoHTML = `<div class="icono-estado tarjeta"><ion-icon name="card-outline"></ion-icon> PAGO CON TARJETA</div>`;
                     } else {
-                        iconoEstadoHTML = `<div class="icono-estado efectivo"><ion-icon name="cash-outline"></ion-icon> EFECTIVO</div>`;
+                        iconoEstadoHTML = `<div class="icono-estado efectivo"><ion-icon name="cash-outline"></ion-icon> PAGO EN EFECTIVO</div>`;
                     }
                 } 
-                // 2. ¿Ya está completado (comieron) pero no han pedido cuenta?
+                // CASO 2: PEDIDO SERVIDO (Comiendo)
+                // Aquí usamos 'completado' de la BD pero mostramos 'SERVIDO' o 'DISFRUTANDO'
                 else if (mesa.estado_pedido === 'completado') {
-                    // Aquí podrías poner la palomita si quieres indicar que ya se sirvió todo
-                    iconoEstadoHTML = `<div class="icono-estado ok"><ion-icon name="checkmark-circle-outline"></ion-icon> SERVIDO</div>`;
+                    colorBorde = '#3498db'; // Azul calmado
+                    iconoEstadoHTML = `<div class="icono-estado ok" style="background-color:#3498db;"><ion-icon name="restaurant-outline"></ion-icon> COMIENDO</div>`;
                 }
-                // 3. Estado normal (Esperando o Comiendo)
+                // CASO 3: EN COCINA (Esperando)
                 else {
-                    iconoEstadoHTML = `<div class="icono-estado reloj"><ion-icon name="time-outline"></ion-icon> EN CURSO</div>`;
+                    colorBorde = '#e74c3c'; // Rojo (Ocupado/Cocinando)
+                    iconoEstadoHTML = `<div class="icono-estado reloj"><ion-icon name="time-outline"></ion-icon> COCINANDO...</div>`;
                 }
             }
-
-            // Bordes de color
-            let colorBorde = '#2ecc71'; // Verde (Libre)
-            if (esOcupada) {
-                if (mesa.estado_pedido === 'por_pagar') colorBorde = '#f39c12'; // Naranja (Atención)
-                else colorBorde = '#e74c3c'; // Rojo (Ocupada normal)
-            }
-
+            
             card.style.borderLeft = `8px solid ${colorBorde}`;
             if (claseAnimacion) card.classList.add(claseAnimacion);
 

@@ -920,23 +920,38 @@ app.get('/api/pedidos/cocina/detalles/:id_pedido', requireAuth, async (req, res)
         res.status(500).json({message: 'Error al cargar los detalles.'});
     }
 });
-// MODIFICACIÓN: GET Mesas enriquecido con estado del pedido
+
 app.get('/api/mesas', requireAuth, async (req, res) => {
     try {
         const [mesas] = await pool.query(
             `SELECT 
                 m.*, 
                 p.estado AS estado_pedido,
-                p.metodo_pago
+                p.metodo_pago,
+                p.total_calculado
              FROM mesas m
              LEFT JOIN pedidos p ON m.numero_mesa = p.mesa 
                  AND p.id_restaurante = m.id_restaurante
+                 -- AQUÍ ESTÁ EL TRUCO: Solo unimos si el pedido está "VIVO"
                  AND p.estado NOT IN ('inactivo', 'archivado', 'cancelado')
              WHERE m.id_restaurante = ? 
              ORDER BY m.id_mesa ASC`,
             [req.session.restauranteId]
-        );
-        res.json(mesas);
+        );    
+        const mesasUnicas = [];
+        const mapaMesas = new Map();
+
+        mesas.forEach(fila => {
+            if (!mapaMesas.has(fila.id_mesa)) {
+                mapaMesas.set(fila.id_mesa, true);
+                mesasUnicas.push(fila);
+            } else {
+                console.warn(`Aviso: Se detectó posible duplicado de pedido activo en mesa ${fila.numero_mesa}`);
+            }
+        });
+
+        res.json(mesasUnicas);
+
     } catch (error) {
         console.error('Error al obtener mesas:', error);
         res.status(500).json({ message: 'Error al cargar las mesas.' });
@@ -992,44 +1007,44 @@ app.post('/api/mesas/:id/ocupar', requireAuth, async (req, res) => {
     }
 });
 
-// 5. POST Liberar Mesa (Borrar Código) - Para Mesero y Dueño
 app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
+    const connection = await pool.getConnection();
     try {
         const { id } = req.params;
+        const id_restaurante = req.session.restauranteId;
         
-        // Aquí podrías agregar validación: ¿Hay pedidos sin pagar en esta mesa?
-        // Por ahora lo haremos directo para mantenerlo simple.
-        
-        await pool.query(
+        await connection.beginTransaction();
+
+        const [mesaInfo] = await connection.query(
+            "SELECT numero_mesa FROM mesas WHERE id_mesa = ?", 
+            [id]
+        );
+
+        if (mesaInfo.length > 0) {
+            const nombreMesa = mesaInfo[0].numero_mesa;
+
+            await connection.query(
+                `UPDATE pedidos 
+                 SET estado = 'inactivo' 
+                 WHERE mesa = ? AND id_restaurante = ? 
+                 AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+                [nombreMesa, id_restaurante]
+            );
+        }
+        await connection.query(
             "UPDATE mesas SET estado = 'libre', codigo_sesion = NULL WHERE id_mesa = ? AND id_restaurante = ?",
-            [id, req.session.restauranteId]
+            [id, id_restaurante]
         );
         
-        res.json({ message: 'Mesa liberada exitosamente.' });
+        await connection.commit();
+        res.json({ message: 'Mesa liberada y pedido cerrado exitosamente.' });
+
     } catch (error) {
+        await connection.rollback();
         console.error('Error al liberar mesa:', error);
         res.status(500).json({ message: 'Error al liberar la mesa.' });
-    }
-});
-// ==========================================
-// === API MÓVIL (CLIENTE) - LÓGICA "LATE BINDING" ===
-// ==========================================
-
-// 1. VER MENÚ (Totalmente público, no requiere mesa ni PIN aún)
-// La App solo necesita saber el ID del restaurante (en tu caso hardcodeado a 1 o enviado por param)
-app.get('/api/movil/menu', async (req, res) => {
-    try {
-        const id_restaurante = 1; // O recibirlo por query param ?id_restaurante=1
-        const [menu] = await pool.query(
-            `SELECT id_producto, nombre, descripcion, precio_venta, tipo 
-             FROM productos 
-             WHERE id_restaurante = ? AND estado = 'activo'`,
-            [id_restaurante]
-        );
-        res.json(menu);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error al cargar menú.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -1179,36 +1194,47 @@ app.post('/api/finanzas/egreso', requireAuth, requireOwner, async (req, res) => 
 });
 // --- EN app.js ---
 
-// 3. PEDIR CUENTA (Cliente solicita pagar)
 app.post('/api/movil/cuenta', async (req, res) => {
-    const { numero_mesa, metodo_pago } = req.body; 
-    const id_restaurante = 1; // Hardcodeado por ahora
+    let { numero_mesa, metodo_pago } = req.body; 
+    const id_restaurante = 1; 
 
-    // Intentamos normalizar el nombre de la mesa (si envían "1", buscamos "Mesa 1")
-    // Esto previene el Error #2 que te explico abajo
-    const nombreMesa = numero_mesa.toString().toLowerCase().startsWith('mesa') 
-        ? numero_mesa 
-        : `Mesa ${numero_mesa}`;
+    if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa')) {
+        numero_mesa = `Mesa ${numero_mesa}`;
+    }
+
+    // Validación básica
+    if (!['efectivo', 'tarjeta'].includes(metodo_pago)) {
+        return res.status(400).json({ message: 'Método de pago inválido.' });
+    }
 
     try {
-        // Actualizamos el pedido activo de esa mesa a 'por_pagar'
         const [result] = await pool.query(
             `UPDATE pedidos 
              SET estado = 'por_pagar', 
                  metodo_pago = ? 
-             WHERE mesa = ? AND id_restaurante = ? AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
-            [metodo_pago, nombreMesa, id_restaurante]
+             WHERE mesa = ? AND id_restaurante = ? 
+             AND estado NOT IN ('cancelado', 'archivado', 'inactivo', 'por_pagar')`,
+            [metodo_pago, numero_mesa, id_restaurante]
         );
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'No hay pedido activo para esta mesa.' });
+            // Verificamos si es que ya la habían pedido
+            const [check] = await pool.query(
+                `SELECT estado FROM pedidos WHERE mesa = ? AND id_restaurante = ? AND estado = 'por_pagar'`,
+                [numero_mesa, id_restaurante]
+            );
+            
+            if(check.length > 0) {
+                 return res.json({ message: 'Ya se había solicitado la cuenta previamente.' });
+            }
+            return res.status(404).json({ message: 'No hay un pedido activo para pedir la cuenta.' });
         }
 
-        res.json({ message: 'Cuenta solicitada al mesero.' });
+        res.json({ message: 'Cuenta solicitada. El mesero vendrá pronto.' });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error al solicitar cuenta.' });
+        console.error('Error pidiendo cuenta:', error);
+        res.status(500).json({ message: 'Error al procesar solicitud.' });
     }
 });
 // 1. CONFIGURAR GASTOS FIJOS (Guardar lo que siempre se cobra)
@@ -1270,5 +1296,101 @@ app.get('/api/finanzas/dia', requireAuth, async (req, res) => {
         });
     } catch (e) { console.error(e); res.status(500).json({message: 'Error al calcular día'}); }
 });
+
+app.get('/api/movil/ticket', async (req, res) => {
+    let { numero_mesa } = req.query;
+    const id_restaurante = 1; // Hardcodeado por simplicidad de tu proyecto
+
+    // Normalizar nombre (ej. "1" -> "Mesa 1")
+    if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa')) {
+        numero_mesa = `Mesa ${numero_mesa}`;
+    }
+
+    try {
+        // A. Buscar el pedido ACTIVO de esa mesa
+        const [pedidos] = await pool.query(
+            `SELECT id_pedido, fecha_creacion, total_calculado 
+             FROM pedidos 
+             WHERE mesa = ? AND id_restaurante = ? 
+             AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+            [numero_mesa, id_restaurante]
+        );
+
+        if (pedidos.length === 0) {
+            return res.status(404).json({ message: 'No hay cuenta pendiente para esta mesa.' });
+        }
+        
+        const pedido = pedidos[0];
+
+        // B. Buscar los productos consumidos
+        const [detalles] = await pool.query(
+            `SELECT p.nombre, pd.cantidad, pd.precio_en_pedido 
+             FROM pedido_detalles pd
+             JOIN productos p ON pd.id_producto = p.id_producto
+             WHERE pd.id_pedido = ?`,
+            [pedido.id_pedido]
+        );
+
+        // C. Obtener nombre del restaurante (Opcional, para el encabezado del ticket)
+        const [rest] = await pool.query("SELECT nombre_restaurante FROM restaurante WHERE id_restaurante = ?", [id_restaurante]);
+
+        // D. Armar respuesta JSON bonita para la App
+        const ticketData = {
+            restaurante: rest[0].nombre_restaurante,
+            folio: `ORD-${pedido.id_pedido}`,
+            fecha: pedido.fecha_creacion,
+            items: detalles.map(d => ({
+                nombre: d.nombre,
+                cantidad: d.cantidad,
+                precio: d.precio_en_pedido,
+                subtotal: d.cantidad * d.precio_en_pedido
+            })),
+            total: pedido.total_calculado
+        };
+
+        res.json(ticketData);
+
+    } catch (error) {
+        console.error('Error generando ticket:', error);
+        res.status(500).json({ message: 'Error al generar el ticket.' });
+    }
+});
+
+// 3. CONSULTAR ESTADO (El "Latido" de la App)
+// La App consultará esto cada X segundos para saber si cambia de "en proceso" a "completado"
+app.get('/api/movil/estado-pedido', async (req, res) => {
+    let { numero_mesa } = req.query;
+    const id_restaurante = 1;
+
+    if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa')) {
+        numero_mesa = `Mesa ${numero_mesa}`;
+    }
+
+    try {
+        const [pedidos] = await pool.query(
+            `SELECT estado, metodo_pago 
+             FROM pedidos 
+             WHERE mesa = ? AND id_restaurante = ? 
+             AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+            [numero_mesa, id_restaurante]
+        );
+
+        if (pedidos.length === 0) {
+            // Si no hay pedido, la mesa está libre o limpia
+            return res.json({ estado: 'sin_pedido' });
+        }
+
+        // Devolvemos el estado para que la App reaccione (ej. cambie pantalla a "Buen Provecho")
+        res.json({ 
+            estado: pedidos[0].estado,
+            metodo_pago: pedidos[0].metodo_pago
+        });
+
+    } catch (error) {
+        console.error('Error consultando estado:', error);
+        res.status(500).json({ message: 'Error de servidor' });
+    }
+});
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
