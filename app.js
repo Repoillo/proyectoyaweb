@@ -1460,12 +1460,24 @@ app.get('/api/finanzas/gastos-fijos', requireAuth, requireOwner, async (req, res
     } catch (error) { res.status(500).json({ message: 'Error.' }); }
 });
 
-// B. BORRAR un gasto fijo
 app.delete('/api/finanzas/gastos-fijos/:id', requireAuth, requireOwner, async (req, res) => {
     try {
-        await pool.query("DELETE FROM config_gastos_diarios WHERE id_gasto = ? AND id_restaurante = ?", [req.params.id, req.session.restauranteId]);
-        res.json({ message: 'Eliminado.' });
-    } catch (error) { res.status(500).json({ message: 'Error.' }); }
+        // CORRECCIÓN AQUÍ: Antes decía "id_gasto", debe decir "id_gasto_fijo"
+        const [result] = await pool.query(
+            "DELETE FROM config_gastos_diarios WHERE id_gasto_fijo = ? AND id_restaurante = ?", 
+            [req.params.id, req.session.restauranteId]
+        );
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Gasto no encontrado o no tienes permiso.' });
+        }
+
+        res.json({ message: 'Eliminado correctamente.' });
+
+    } catch (error) { 
+        console.error("Error al borrar gasto fijo:", error); // Esto te mostrará el error real en la terminal
+        res.status(500).json({ message: 'Error interno del servidor al eliminar.' }); 
+    }
 });
 // 2. OBTENER RESUMEN DEL DÍA (Con Sueldos y Gastos Fijos Automáticos)
 app.get('/api/finanzas/dia', requireAuth, async (req, res) => {

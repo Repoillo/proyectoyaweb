@@ -795,51 +795,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function abrirModalGastosFijos() {
-        // 1. Ocultar el botón de guardado PRINCIPAL del modal (el que usa el submit)
+        // 1. Ocultar el botón "Guardar" grande del modal (el del formulario principal)
         const btnGuardarPrincipal = formulario.querySelector('button[type="submit"]');
         if(btnGuardarPrincipal) btnGuardarPrincipal.style.display = 'none';
 
-        // 2. Configurar Título y Mostrar Modal usando la estructura existente
-        tituloModal.textContent = "Configurar Gastos Fijos";
+        // 2. Título
+        tituloModal.textContent = "Configuración de Gastos Fijos";
         
-        // 3. Inyectar el contenido específico en camposDinamicos
+        // 3. INYECTAR EL NUEVO DISEÑO HTML
         if(!camposDinamicos) return;
         
         camposDinamicos.innerHTML = `
-            <div style="padding: 5px;">
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <p style="color:#7f8c8d; font-size: 0.9em; margin-top: 5px;">
-                        Estos montos se descontarán automáticamente al abrir caja cada día.
+            <div class="gastos-wrapper">
+                
+                <div class="gastos-form-card">
+                    <div class="gastos-input-row">
+                        <div class="input-group-item" style="flex: 2;">
+                            <label>Concepto</label>
+                            <input type="text" id="conceptoGasto" placeholder="Ej. Luz, Renta..." autocomplete="off">
+                        </div>
+                        
+                        <div class="input-group-item" style="flex: 1.2;">
+                            <label>Diario ($)</label>
+                            <input type="number" id="montoGasto" placeholder="0.00" min="1" step="0.01">
+                        </div>
+
+                        <button type="button" id="btnGuardarGastoFijo" class="btn-add-fix" title="Agregar">
+                            <ion-icon name="add-outline"></ion-icon>
+                        </button>
+                    </div>
+                    <p style="margin: 8px 0 0 0; font-size: 0.75rem; color: #95a5a6; text-align: center;">
+                        * Este monto se descontará automáticamente al abrir caja.
                     </p>
                 </div>
 
-                <div style="background: white; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                    <h4 style="margin-top: 0; color: #2c3e50; margin-bottom: 15px; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px;">
-                        <ion-icon name="add-circle-outline" style="vertical-align: middle;"></ion-icon> Nuevo Gasto
-                    </h4>
-                    
-                    <div style="display: flex; gap: 10px; align-items: flex-end;">
-                        <div style="flex: 2;">
-                            <label style="font-size: 0.85em; font-weight: bold; color: #555; display: block; margin-bottom: 5px;">Concepto</label>
-                            <input type="text" id="conceptoGasto" placeholder="Ej. Renta, Internet..." maxlength="30" 
-                                style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #f9f9f9;">
-                        </div>
-                        <div style="flex: 1;">
-                            <label style="font-size: 0.85em; font-weight: bold; color: #555; display: block; margin-bottom: 5px;">Diario ($)</label>
-                            <input type="number" id="montoGasto" placeholder="0.00" min="0.01" max="50000" step="0.01" 
-                                style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #f9f9f9; font-weight: bold; color: #2c3e50;">
-                        </div>
-                        <button type="button" id="btnGuardarGastoFijo" 
-                            style="background: var(--primaryblue); color: white; border: none; border-radius: 5px; width: 42px; height: 42px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
-                            <ion-icon name="save" style="font-size: 1.4em;"></ion-icon>
-                        </button>
+                <div>
+                    <div class="lista-header">GASTOS ACTIVOS</div>
+                    <div id="listaGastosFijosContainer" class="lista-gastos-scroll">
+                        <div style="padding: 20px; text-align: center; color: #aaa;">Cargando...</div>
                     </div>
-                    <small style="color: #95a5a6; margin-top: 8px; display: block; font-size: 0.8em;">* Máximo $50,000 por concepto.</small>
-                </div>
-
-                <h4 style="color: #2c3e50; margin-bottom: 10px;">📋 Gastos Activos</h4>
-                <div id="listaGastosFijosContainer" style="max-height: 200px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; background: #fff;">
-                    <div style="padding: 20px; text-align: center; color: #aaa;">Cargando...</div>
                 </div>
             </div>
         `;
@@ -848,61 +842,56 @@ document.addEventListener('DOMContentLoaded', () => {
         if(modal) modal.classList.remove('oculto');
 
         // ===========================================
-        // LÓGICA INTERNA DE GASTOS FIJOS
+        // LÓGICA (CARGAR, GUARDAR, BORRAR)
         // ===========================================
 
-        // B. FUNCIÓN CARGAR LISTA
+        // A. CARGAR LISTA
         const cargarLista = async () => {
             const container = document.getElementById('listaGastosFijosContainer');
             try {
                 const res = await fetch('/api/finanzas/gastos-fijos');
-                
-                if(!res.ok) throw new Error("Error en ruta");
+                if(!res.ok) throw new Error("Error API");
                 const lista = await res.json();
 
                 if(lista.length === 0) {
                     container.innerHTML = `
-                        <div style="padding: 30px; text-align: center; color: #bdc3c7;">
-                            <ion-icon name="wallet-outline" style="font-size: 3em; margin-bottom: 10px;"></ion-icon>
-                            <p>No tienes gastos fijos configurados.</p>
+                        <div class="estado-vacio">
+                            <ion-icon name="wallet-outline"></ion-icon>
+                            <span>No hay gastos configurados.</span>
                         </div>`;
                     return;
                 }
 
-                let html = '<table style="width:100%; border-collapse:collapse;">';
+                let html = '';
                 lista.forEach(g => {
+                    // CUIDADO AQUÍ: Usamos 'id_gasto_fijo' como viene de la BD
                     html += `
-                        <tr style="border-bottom: 1px solid #f0f0f0;">
-                            <td style="padding: 12px; color: #34495e; font-weight: 500;">
+                        <div class="gasto-item-row">
+                            <div class="gasto-nombre">
                                 ${escapeHTML(g.concepto)}
-                            </td>
-                            <td style="padding: 12px; font-weight: bold; color: #e74c3c; text-align: right;">
-                                -$${parseFloat(g.monto).toFixed(2)}
-                            </td>
-                            <td style="padding: 12px; text-align: right; width: 40px;">
-                                <button class="btnEliminarGF" data-id="${g.id_gasto}"
-                                    style="background: #fff0f0; color: #c0392b; border: 1px solid #e74c3c; border-radius: 4px; width: 30px; height: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center;" 
-                                    title="Eliminar">
+                            </div>
+                            <div class="gasto-acciones">
+                                <span class="precio-negativo">-$${parseFloat(Math.abs(g.monto)).toFixed(2)}</span>
+                                <button type="button" class="btn-trash btnEliminarGF" data-id="${g.id_gasto_fijo}">
                                     <ion-icon name="trash-outline"></ion-icon>
                                 </button>
-                            </td>
-                        </tr>`;
+                            </div>
+                        </div>`;
                 });
-                html += '</table>';
                 container.innerHTML = html;
 
-                // Asignar eventos de eliminación
+                // Eventos Borrar
                 container.querySelectorAll('.btnEliminarGF').forEach(btn => {
                     btn.addEventListener('click', () => eliminarGastoFijo(btn.dataset.id));
                 });
 
             } catch (e) {
                 console.error(e);
-                container.innerHTML = '<p style="color:red; text-align:center; padding:10px;">Error de conexión con el servidor.</p>';
+                container.innerHTML = '<p style="color:red; text-align:center;">Error de conexión.</p>';
             }
         };
 
-        // C. FUNCIÓN GUARDAR
+        // B. GUARDAR (Click en el botón +)
         const btnGuardar = document.getElementById('btnGuardarGastoFijo');
         if(btnGuardar) {
             btnGuardar.onclick = async () => {
@@ -912,41 +901,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 const concepto = conceptoInput.value.trim();
                 const monto = parseFloat(montoInput.value);
                 
-                // Validaciones
-                if(!concepto) {
-                    conceptoInput.style.border = "1px solid red";
-                    return alert("Falta el nombre del gasto.");
-                }
-                if(!monto || monto <= 0) {
-                    montoInput.style.border = "1px solid red";
-                    return alert("El monto debe ser positivo.");
-                }
-                if(monto > 50000) return alert("Monto máximo excedido ($50,000).");
+                if(!concepto) return alert("Escribe un nombre para el gasto.");
+                if(!monto || monto <= 0) return alert("El monto debe ser mayor a 0.");
+
+                // Efecto visual de carga
+                const iconoOriginal = btnGuardar.innerHTML;
+                btnGuardar.innerHTML = '<ion-icon name="hourglass-outline"></ion-icon>';
+                btnGuardar.disabled = true;
 
                 try {
                     const res = await fetch('/api/finanzas/gastos-fijos', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ concepto, monto })
+                        body: JSON.stringify({concepto, monto })
                     });
 
                     if(res.ok) {
                         conceptoInput.value = '';
                         montoInput.value = '';
-                        conceptoInput.style.border = "1px solid #ccc"; 
-                        montoInput.style.border = "1px solid #ccc";
+                        conceptoInput.focus(); // Regresar foco al input
                         cargarLista(); 
                     } else {
-                        const err = await res.json();
-                        alert(err.message || "Error al guardar");
+                        alert("Error al guardar.");
                     }
-                } catch(e) { alert("Error de conexión"); }
+                } catch(e) { console.error(e); }
+                
+                // Restaurar botón
+                btnGuardar.innerHTML = iconoOriginal;
+                btnGuardar.disabled = false;
             };
         }
 
-        // D. FUNCIÓN BORRAR (Interna)
+        // C. BORRAR
         const eliminarGastoFijo = async (id) => {
-            if(!confirm('¿Eliminar este gasto automático?')) return;
+            if(!id || id === 'undefined') return alert("Error de ID. Recarga la página.");
+            
+            if(!confirm('¿Dejar de descontar este gasto diario?')) return;
+            
             try {
                 const res = await fetch(`/api/finanzas/gastos-fijos/${id}`, { method: 'DELETE' });
                 if(res.ok) {
@@ -954,13 +945,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     alert("No se pudo eliminar.");
                 }
-            } catch(e) { 
-                console.error(e);
-                alert("Error al conectar."); 
-            }
+            } catch(e) { console.error(e); }
         };
 
-        // Cargar al abrir
+        // Inicializar
         cargarLista();
     }
 

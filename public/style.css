@@ -1154,3 +1154,165 @@ input {
     color: var(--primaryblue);
     margin-bottom: 10px;
 }
+/* Contenedor principal dentro del modal */
+.gastos-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    font-family: 'Montserrat', sans-serif;
+}
+
+/* --- TARJETA DE FORMULARIO (Arriba) --- */
+.gastos-form-card {
+    background-color: #f4f6f7; /* Gris muy suave */
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+/* Fila de inputs + botón */
+.gastos-input-row {
+    display: flex;
+    gap: 10px;        /* Espacio entre elementos */
+    align-items: flex-end; /* Alinear abajo (para que cuadren con el botón) */
+}
+
+/* Cajas de los inputs */
+.input-group-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.input-group-item label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #7f8c8d;
+    margin-left: 2px;
+}
+
+.input-group-item input {
+    height: 45px;       /* Altura fija */
+    padding: 0 12px;
+    border: 1px solid #bdc3c7;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    width: 100%;
+    background: #fff;
+    box-sizing: border-box; /* CRUCIAL para que no se desborde */
+}
+
+.input-group-item input:focus {
+    border-color: #e67e22;
+    outline: none;
+}
+
+/* El botón de AGREGAR (+) */
+.btn-add-fix {
+    height: 45px;       /* Misma altura que el input */
+    width: 45px;        /* Cuadrado */
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;      /* Para centrar el ícono */
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;  /* Tamaño del ícono */
+    flex-shrink: 0;     /* Evita que se aplaste */
+    transition: background 0.2s;
+    margin: 0;          /* Sin márgenes extra */
+    padding: 0;
+}
+
+.btn-add-fix:hover {
+    background-color: #34495e;
+    transform: translateY(-2px);
+}
+
+/* --- LISTA DE GASTOS (Abajo) --- */
+.lista-header {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #ecf0f1;
+    padding-bottom: 5px;
+}
+
+.lista-gastos-scroll {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid #ecf0f1;
+    border-radius: 8px;
+    background: #fff;
+}
+
+/* Cada fila de gasto */
+.gasto-item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid #f9f9f9;
+}
+
+.gasto-item-row:last-child {
+    border-bottom: none;
+}
+
+.gasto-nombre {
+    font-weight: 600;
+    color: #34495e;
+    font-size: 0.95rem;
+}
+
+.gasto-acciones {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.precio-negativo {
+    color: #c0392b;
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+/* Botón de eliminar (Basura) */
+.btn-trash {
+    background: #fce4ec;
+    color: #c2185b;
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+}
+
+.btn-trash:hover {
+    background: #f8bbd0;
+    transform: scale(1.1);
+}
+
+/* Estado vacío (Cuando no hay gastos) */
+.estado-vacio {
+    padding: 30px;
+    text-align: center;
+    color: #bdc3c7;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.estado-vacio ion-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    opacity: 0.5;
+}
