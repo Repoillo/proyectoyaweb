@@ -1065,7 +1065,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataApp = JSON.stringify({
             accion: 'cargar_menu',
             id_restaurante: 1,
-            nombre: 'Restaurante YA'
+            nombre: 'Restaurante YA',
+            api_url: window.location.origin
         });
 
         if(typeof QRious === 'undefined') return alert("Librería QRious no cargada.");
