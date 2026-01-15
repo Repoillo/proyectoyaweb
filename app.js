@@ -1611,6 +1611,56 @@ app.get('/api/movil/estado-pedido', async (req, res) => {
         res.status(500).json({ message: 'Error de servidor' });
     }
 });
+// RUTA 3: El "Ojo" de la App (Ver Estado y Ticket)
+app.get('/api/movil/estado-pedido/:pin', async (req, res) => {
+    const { pin } = req.params;
+
+    try {
+        // 1. Buscamos si este PIN corresponde a una mesa con pedido activo
+        // OJO: Asumimos que guardas el PIN en 'codigo_sesion' de la mesa
+        const [mesa] = await pool.query(
+            `SELECT m.numero_mesa, p.id_pedido, p.estado, p.total 
+             FROM mesas m 
+             JOIN pedidos p ON m.id_mesa = p.id_mesa 
+             WHERE m.codigo_sesion = ? AND p.estado != 'pagado' AND p.estado != 'cancelado'`,
+            [pin]
+        );
+
+        // Si no hay mesa con ese PIN o no tiene pedido activo
+        if (mesa.length === 0) {
+            return res.json({ 
+                activo: false, 
+                mensaje: "No hay pedido activo o PIN incorrecto." 
+            });
+        }
+
+        const datosPedido = mesa[0];
+
+        // 2. Buscamos los items para armar el "Ticket en condiciones"
+        const [items] = await pool.query(
+            `SELECT dp.cantidad, prod.nombre, dp.precio_unitario, (dp.cantidad * dp.precio_unitario) as subtotal
+             FROM detalles_pedido dp
+             JOIN productos prod ON dp.id_producto = prod.id_producto
+             WHERE dp.id_pedido = ?`,
+            [datosPedido.id_pedido]
+        );
+
+        // 3. Respondemos con TODO lo que necesita la App
+        res.json({
+            activo: true,
+            mesa: datosPedido.numero_mesa,
+            id_pedido: datosPedido.id_pedido,
+            estado: datosPedido.estado, // "pendiente", "cocinando", "comiendo", "por_pagar"
+            total: datosPedido.total,
+            items: items // Aquí va la lista para el ticket
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error al consultar estado.' });
+    }
+});
+
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
