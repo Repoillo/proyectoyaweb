@@ -1660,29 +1660,22 @@ app.get('/api/movil/estado-pedido/:pin', async (req, res) => {
         res.status(500).json({ message: 'Error al consultar estado.' });
     }
 });
-// --- RUTA PÚBLICA PARA EL MENÚ (APP MÓVIL) ---
 app.get('/api/movil/menu', async (req, res) => {
-    const { restaurant_id } = req.query; // La app manda ?restaurant_id=1
+    const { restaurant_id } = req.query; 
+    const idRestaurante = restaurant_id || 1;
 
     try {
-        // Obtenemos los productos activos de ese restaurante
-        // IMPORTANTE: Renombramos 'tipo' como 'categoria' para que la App lo entienda directo
+        // Buscamos los productos en la base de datos
         const [menu] = await pool.query(
             `SELECT id_producto, nombre, descripcion, precio_venta, imagen, tipo as categoria 
              FROM productos 
              WHERE id_restaurante = ? AND estado = 'activo'`, 
-            [restaurant_id]
+            [idRestaurante]
         );
-
-        if (menu.length === 0) {
-            return res.json([]); // Si no hay nada, devolvemos lista vacía
-        }
-
         res.json(menu);
-
     } catch (error) {
-        console.error('Error enviando menú a la app:', error);
-        res.status(500).json({ message: 'Error del servidor al obtener menú' });
+        console.error(error);
+        res.status(500).send("Error del servidor");
     }
 });
 
