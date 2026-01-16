@@ -1376,48 +1376,126 @@ app.post('/api/finanzas/egreso', requireAuth, requireOwner, async (req, res) => 
         res.status(500).json({ message: 'Error al guardar egreso.' });
     }
 });
-
+// ==========================================
+// RUTA 1: PEDIR LA CUENTA (El Modal "¡YA terminé!")
+// ==========================================
 app.post('/api/movil/cuenta', async (req, res) => {
-    let { numero_mesa, metodo_pago } = req.body; 
+    // Solo necesitamos el PIN y el método de pago. La mesa la sacamos del PIN.
+    const { pin, metodo_pago } = req.body; 
     const id_restaurante = 1; 
-
-    if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa')) {
-        numero_mesa = `Mesa ${numero_mesa}`;
-    }
 
     // Validación básica
     if (!['efectivo', 'tarjeta'].includes(metodo_pago)) {
         return res.status(400).json({ message: 'Método de pago inválido.' });
     }
 
+    const connection = await pool.getConnection();
+
     try {
-        const [result] = await pool.query(
+        // 1. Averiguar mesa y pedido activo usando el PIN
+        const [mesaCheck] = await connection.query(
+            `SELECT m.numero_mesa, p.id_pedido 
+             FROM mesas m
+             JOIN pedidos p ON m.numero_mesa = p.mesa AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo', 'pagado')
+             WHERE m.codigo_sesion = ? AND m.id_restaurante = ?`,
+            [pin, id_restaurante]
+        );
+
+        if (mesaCheck.length === 0) {
+            return res.status(404).json({ message: 'No se encontró un pedido activo para este PIN.' });
+        }
+
+        const { id_pedido, numero_mesa } = mesaCheck[0];
+
+        // 2. Actualizar estado
+        const [result] = await connection.query(
             `UPDATE pedidos 
              SET estado = 'por_pagar', 
                  metodo_pago = ? 
-             WHERE mesa = ? AND id_restaurante = ? 
-             AND estado NOT IN ('cancelado', 'archivado', 'inactivo', 'por_pagar')`,
-            [metodo_pago, numero_mesa, id_restaurante]
+             WHERE id_pedido = ?`,
+            [metodo_pago, id_pedido]
         );
 
         if (result.affectedRows === 0) {
-            // Verificamos si es que ya la habían pedido
-            const [check] = await pool.query(
-                `SELECT estado FROM pedidos WHERE mesa = ? AND id_restaurante = ? AND estado = 'por_pagar'`,
-                [numero_mesa, id_restaurante]
-            );
-            
-            if(check.length > 0) {
-                 return res.json({ message: 'Ya se había solicitado la cuenta previamente.' });
-            }
-            return res.status(404).json({ message: 'No hay un pedido activo para pedir la cuenta.' });
+             return res.json({ message: 'No se pudo actualizar el estado del pedido.' });
         }
 
-        res.json({ message: 'Cuenta solicitada. El mesero vendrá pronto.' });
+        res.json({ message: 'Cuenta solicitada. El estado ha cambiado a espera de pago.' });
 
     } catch (error) {
         console.error('Error pidiendo cuenta:', error);
         res.status(500).json({ message: 'Error al procesar solicitud.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// ==========================================
+// RUTA 2: EL CEREBRO (Estado + Datos para Ticket PDF)
+// ==========================================
+// Esta ruta alimenta tanto al Monitor de Estado como al Generador de PDF
+app.get('/api/movil/seguimiento/:pin', async (req, res) => {
+    const { pin } = req.params;
+    const id_restaurante = 1;
+
+    try {
+        // 1. Buscamos Mesa + Pedido + Info Restaurante (para el ticket)
+        const [info] = await pool.query(
+            `SELECT 
+                p.id_pedido, 
+                p.estado, 
+                p.total_calculado as total, 
+                p.fecha_creacion,
+                p.mesa,
+                r.nombre_restaurante,
+                r.direccion as direccion_restaurante
+             FROM mesas m 
+             JOIN pedidos p ON m.numero_mesa = p.mesa 
+             JOIN restaurante r ON m.id_restaurante = r.id_restaurante
+             WHERE m.codigo_sesion = ? 
+               AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo', 'pagado')
+               AND m.id_restaurante = ?`,
+            [pin, id_restaurante]
+        );
+
+        // Si no hay pedido activo, devolvemos inactivo
+        if (info.length === 0) {
+            return res.json({ activo: false, estado: 'inactivo' });
+        }
+
+        const datosGenerales = info[0];
+
+        // 2. Buscamos los items (para el desglose del ticket)
+        const [items] = await pool.query(
+            `SELECT p.nombre, pd.cantidad, pd.precio_en_pedido 
+             FROM pedido_detalles pd
+             JOIN productos p ON pd.id_producto = p.id_producto
+             WHERE pd.id_pedido = ?`,
+            [datosGenerales.id_pedido]
+        );
+
+        // 3. Respuesta completa
+        res.json({
+            activo: true,
+            estado: datosGenerales.estado, // sin_ver, en_proceso, completado, por_pagar
+            ticket: {
+                folio: `ORD-${datosGenerales.id_pedido}`,
+                fecha: datosGenerales.fecha_creacion,
+                restaurante: datosGenerales.nombre_restaurante,
+                mesa: datosGenerales.mesa,
+                items: items.map(i => ({
+                    nombre: i.nombre,
+                    cantidad: i.cantidad,
+                    precio: i.precio_en_pedido,
+                    subtotal: i.cantidad * i.precio_en_pedido
+                })),
+                total: datosGenerales.total
+            }
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error al consultar seguimiento.' });
     }
 });
 
