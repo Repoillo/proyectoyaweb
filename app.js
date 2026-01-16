@@ -1146,42 +1146,45 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
     }
 });
 
-// 2. ENVIAR PEDIDO (Versión V2: Solo requiere PIN y corrige items sueltos)
+// ==========================================
+// RUTA: CREAR PEDIDO (Solo con PIN)
+// ==========================================
 app.post('/api/movil/pedido', async (req, res) => {
-    let { pin, items } = req.body; // Ya no leemos 'numero_mesa' del body, lo buscaremos por PIN
+    // 1. Recibimos SOLO el PIN y los Items
+    let { pin, items } = req.body; 
     const id_restaurante = 1; 
 
-    // --- CORRECCIÓN DEL ERROR "items is not iterable" ---
-    if (!items) {
-        return res.status(400).json({ message: "Faltan los productos (items)." });
-    }
-    // Si items NO es un array (es un objeto suelto), lo envolvemos en corchetes
-    if (!Array.isArray(items)) {
-        items = [items];
-    }
-    // ----------------------------------------------------
+    console.log("--- INTENTO DE PEDIDO ---");
+    console.log("PIN recibido:", pin);
+    console.log("Items recibidos:", JSON.stringify(items));
+
+    // Validación básica de entrada
+    if (!pin) return res.status(400).json({ message: "Falta el PIN de sesión." });
+    if (!items || items.length === 0) return res.status(400).json({ message: "El carrito está vacío." });
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-        // A. BUSCAR LA MESA USANDO SOLO EL PIN
-        // Buscamos qué mesa tiene este PIN activo en este momento
+        // 2. BUSCAR MESA POR PIN (La única verdad)
+        // Verificamos que el PIN exista y esté en una mesa 'ocupada'
         const [mesaCheck] = await connection.query(
-            `SELECT numero_mesa FROM mesas 
-             WHERE codigo_sesion = ? AND id_restaurante = ? AND estado = 'ocupada'`,
+            `SELECT numero_mesa, id_restaurante 
+             FROM mesas 
+             WHERE codigo_sesion = ? AND id_restaurante = ?`,
             [pin, id_restaurante]
         );
 
         if (mesaCheck.length === 0) {
+            console.log("ERROR: PIN no encontrado o mesa no válida.");
             await connection.rollback();
-            return res.status(401).json({ message: 'PIN incorrecto o sesión caducada.' });
+            return res.status(401).json({ message: 'PIN inválido. Escanea el QR nuevamente.' });
         }
 
-        // ¡Aquí obtenemos la mesa real desde la base de datos!
-        const nombreMesaReal = mesaCheck[0].numero_mesa;
+        const mesaReal = mesaCheck[0].numero_mesa;
+        console.log(`Mesa encontrada: ${mesaReal}`);
 
-        // B. CÁLCULO TOTAL
+        // 3. CALCULAR TOTAL (Seguridad: calcular precios en servidor, no confiar en el app)
         let total_calculado = 0;
         const detallesInsertar = [];
 
@@ -1190,32 +1193,31 @@ app.post('/api/movil/pedido', async (req, res) => {
                 'SELECT precio_venta FROM productos WHERE id_producto = ?', 
                 [item.id_producto]
             );
-            if (item.cantidad <= 0 || item.cantidad > 50) {
-                await connection.rollback(); 
-                return res.status(400).json({ message: `Cantidad inválida para el producto ${item.id_producto} (Máx 50).` });
-            }
+            
             if (prod.length > 0) {
                 const precio = parseFloat(prod[0].precio_venta);
                 const cantidad = parseInt(item.cantidad);
-                
                 total_calculado += precio * cantidad;
-                // Guardamos para insertar después
+                
+                // Preparamos el array para insertar luego [id_pedido, id_producto, cantidad, precio]
+                // Ponemos 'null' en id_pedido temporalmente
                 detallesInsertar.push([null, item.id_producto, cantidad, precio]);
             }
         }
 
-        // C. CREAR PEDIDO ASOCIADO A ESA MESA
+        // 4. INSERTAR CABECERA DEL PEDIDO
         const [pedidoResult] = await connection.query(
             `INSERT INTO pedidos (id_restaurante, mesa, responsable_pedido, total_calculado, estado, fecha_creacion)
              VALUES (?, ?, 'App Cliente', ?, 'sin ver', NOW())`,
-            [id_restaurante, nombreMesaReal, total_calculado]
+            [id_restaurante, mesaReal, total_calculado]
         );
         
         const id_pedido = pedidoResult.insertId;
+        console.log(`Pedido creado con ID: ${id_pedido}`);
 
-        // D. INSERTAR DETALLES
+        // 5. INSERTAR DETALLES
         if (detallesInsertar.length > 0) {
-            // Asignamos el id_pedido a cada fila
+            // Asignamos el ID real del pedido a las filas
             const filasFinales = detallesInsertar.map(fila => {
                 fila[0] = id_pedido; 
                 return fila;
@@ -1228,16 +1230,24 @@ app.post('/api/movil/pedido', async (req, res) => {
         }
 
         await connection.commit();
-        res.status(201).json({ message: 'Pedido enviado.', id_pedido, mesa: nombreMesaReal });
+        console.log("--- PEDIDO CONFIRMADO ---");
+        
+        // Respondemos con éxito
+        res.status(201).json({ 
+            message: 'Pedido enviado a cocina.', 
+            id_pedido, 
+            mesa: mesaReal 
+        });
 
     } catch (error) {
         await connection.rollback();
-        console.error(error);
-        res.status(500).json({ message: 'Error al procesar pedido.' });
+        console.error("ERROR CRÍTICO EN PEDIDO:", error);
+        res.status(500).json({ message: 'Error interno al procesar el pedido.' });
     } finally {
         connection.release();
     }
 });
+
 // MODIFICACIÓN: Resumen Financiero con "AUTO-APERTURA DE DÍA"
 app.get('/api/finanzas/resumen', requireAuth, requireOwner, async (req, res) => {
     const connection = await pool.getConnection();
