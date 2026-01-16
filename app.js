@@ -1683,7 +1683,27 @@ app.get('/api/movil/menu', async (req, res) => {
     }
 });
 
-
+// ==========================================
+// RUTA DE SEGURIDAD: VERIFICAR SI LA SESIÓN SIGUE VIVA
+// (Para expulsar al cliente si el mesero cierra la mesa)
+// ==========================================
+app.get('/api/movil/verificar-sesion/:pin', async (req, res) => {
+    const { pin } = req.params;
+    try {
+        // Buscamos si existe alguna mesa con este código de sesión activo
+        const [mesa] = await pool.query(
+            "SELECT id_mesa FROM mesas WHERE codigo_sesion = ?", 
+            [pin]
+        );
+        
+        // Si encontramos mesa, es true. Si no (porque se liberó), es false.
+        res.json({ valida: mesa.length > 0 });
+        
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ valida: false });
+    }
+});
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
