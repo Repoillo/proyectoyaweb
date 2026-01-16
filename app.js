@@ -1154,20 +1154,15 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
         connection.release();
     }
 });
-
 // ==========================================
-// RUTA: CREAR PEDIDO (Solo con PIN)
+// RUTA: CREAR PEDIDO (Con Validación de Stock Acumulada)
 // ==========================================
 app.post('/api/movil/pedido', async (req, res) => {
-    // 1. Recibimos SOLO el PIN y los Items
     let { pin, items } = req.body; 
     const id_restaurante = 1; 
 
-    console.log("--- INTENTO DE PEDIDO ---");
-    console.log("PIN recibido:", pin);
-    console.log("Items recibidos:", JSON.stringify(items));
-
-    // Validación básica de entrada
+    // console.log("--- INTENTO DE PEDIDO ---");
+    
     if (!pin) return res.status(400).json({ message: "Falta el PIN de sesión." });
     if (!items || items.length === 0) return res.status(400).json({ message: "El carrito está vacío." });
 
@@ -1175,8 +1170,7 @@ app.post('/api/movil/pedido', async (req, res) => {
     await connection.beginTransaction();
 
     try {
-        // 2. BUSCAR MESA POR PIN (La única verdad)
-        // Verificamos que el PIN exista y esté en una mesa 'ocupada'
+        // 1. Validar Sesión/Mesa
         const [mesaCheck] = await connection.query(
             `SELECT numero_mesa, id_restaurante 
              FROM mesas 
@@ -1185,48 +1179,92 @@ app.post('/api/movil/pedido', async (req, res) => {
         );
 
         if (mesaCheck.length === 0) {
-            console.log("ERROR: PIN no encontrado o mesa no válida.");
             await connection.rollback();
             return res.status(401).json({ message: 'PIN inválido. Escanea el QR nuevamente.' });
         }
-
         const mesaReal = mesaCheck[0].numero_mesa;
-        console.log(`Mesa encontrada: ${mesaReal}`);
 
-        // 3. CALCULAR TOTAL (Seguridad: calcular precios en servidor, no confiar en el app)
+        // 2. VALIDACIÓN DE STOCK ACUMULADA
+        // Creamos un mapa para sumar ingredientes si varios productos usan lo mismo
+        // Ejemplo: 2 Tacos + 1 Burrito usan carne. Sumamos toda la carne requerida.
+        const ingredientesRequeridos = {}; // { id_ingrediente: cantidad_total_necesaria }
+
         let total_calculado = 0;
         const detallesInsertar = [];
 
         for (const item of items) {
+            // A. Validar Producto y Precio
             const [prod] = await connection.query(
-                'SELECT precio_venta FROM productos WHERE id_producto = ?', 
+                'SELECT id_producto, nombre, precio_venta FROM productos WHERE id_producto = ?', 
                 [item.id_producto]
             );
             
-            if (prod.length > 0) {
-                const precio = parseFloat(prod[0].precio_venta);
-                const cantidad = parseInt(item.cantidad);
-                total_calculado += precio * cantidad;
+            if (prod.length === 0) {
+                throw new Error(`Producto ID ${item.id_producto} no existe.`);
+            }
+
+            const productoDB = prod[0];
+            const cantidad = parseInt(item.cantidad);
+            const precio = parseFloat(productoDB.precio_venta);
+            total_calculado += precio * cantidad;
+
+            // B. Buscar Receta del Producto
+            const [receta] = await connection.query(
+                `SELECT r.id_ingrediente, r.cantidad_usada, i.nombre, i.stock 
+                 FROM recetas r
+                 JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+                 WHERE r.id_producto = ?`,
+                [item.id_producto]
+            );
+
+            // C. Acumular requerimientos
+            for (const ing of receta) {
+                const necesario = parseFloat(ing.cantidad_usada) * cantidad;
                 
-                // Preparamos el array para insertar luego [id_pedido, id_producto, cantidad, precio]
-                // Ponemos 'null' en id_pedido temporalmente
-                detallesInsertar.push([null, item.id_producto, cantidad, precio]);
+                if (!ingredientesRequeridos[ing.id_ingrediente]) {
+                    ingredientesRequeridos[ing.id_ingrediente] = {
+                        nombre: ing.nombre,
+                        necesario: 0,
+                        stock_actual: parseFloat(ing.stock) // Guardamos el stock actual de la BD
+                    };
+                }
+                ingredientesRequeridos[ing.id_ingrediente].necesario += necesario;
+            }
+
+            // Preparar para insertar luego
+            detallesInsertar.push([null, item.id_producto, cantidad, precio]);
+        }
+
+        // 3. VERIFICAR SI ALCANZA EL STOCK (Ahora que tenemos los totales)
+        const erroresStock = [];
+        for (const idIng in ingredientesRequeridos) {
+            const datos = ingredientesRequeridos[idIng];
+            // Margen de error pequeño por flotantes
+            if (datos.stock_actual < datos.necesario - 0.01) {
+                erroresStock.push(`${datos.nombre} (Faltan ${(datos.necesario - datos.stock_actual).toFixed(2)})`);
             }
         }
 
-        // 4. INSERTAR CABECERA DEL PEDIDO
+        if (erroresStock.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ 
+                message: `No hay ingredientes suficientes para: ${erroresStock.join(', ')}. Por favor avisa al mesero.` 
+            });
+        }
+
+        // 4. INSERTAR PEDIDO (Si llegamos aquí, hay stock)
+        // Nota: NO descontamos el stock aquí. El stock se descuenta cuando el cocinero marca "Completado".
+        // Pero ya aseguramos que *sí habrá* stock cuando eso pase.
+        
         const [pedidoResult] = await connection.query(
             `INSERT INTO pedidos (id_restaurante, mesa, responsable_pedido, total_calculado, estado, fecha_creacion)
              VALUES (?, ?, 'App Cliente', ?, 'sin ver', NOW())`,
             [id_restaurante, mesaReal, total_calculado]
         );
-        
         const id_pedido = pedidoResult.insertId;
-        console.log(`Pedido creado con ID: ${id_pedido}`);
 
         // 5. INSERTAR DETALLES
         if (detallesInsertar.length > 0) {
-            // Asignamos el ID real del pedido a las filas
             const filasFinales = detallesInsertar.map(fila => {
                 fila[0] = id_pedido; 
                 return fila;
@@ -1239,19 +1277,12 @@ app.post('/api/movil/pedido', async (req, res) => {
         }
 
         await connection.commit();
-        console.log("--- PEDIDO CONFIRMADO ---");
-        
-        // Respondemos con éxito
-        res.status(201).json({ 
-            message: 'Pedido enviado a cocina.', 
-            id_pedido, 
-            mesa: mesaReal 
-        });
+        res.status(201).json({ message: 'Pedido enviado.', id_pedido, mesa: mesaReal });
 
     } catch (error) {
         await connection.rollback();
-        console.error("ERROR CRÍTICO EN PEDIDO:", error);
-        res.status(500).json({ message: 'Error interno al procesar el pedido.' });
+        console.error("ERROR PEDIDO:", error);
+        res.status(500).json({ message: error.message || 'Error interno.' });
     } finally {
         connection.release();
     }
