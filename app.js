@@ -1081,16 +1081,18 @@ app.post('/api/mesas/:id/ocupar', requireAuth, async (req, res) => {
         res.status(500).json({ message: 'Error al generar el código.' });
     }
 });
-
+// ==========================================
+// RUTA: LIBERAR MESA (Cierre Total de Sesión)
+// ==========================================
 app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
     const connection = await pool.getConnection();
     try {
-        const { id } = req.params;
+        const { id } = req.params; // ID de la mesa
         const id_restaurante = req.session.restauranteId;
         
         await connection.beginTransaction();
 
-        // 1. Obtener el nombre de la mesa antes de liberarla
+        // 1. Obtener el nombre de la mesa (ej: "Mesa 1")
         const [mesaInfo] = await connection.query(
             "SELECT numero_mesa FROM mesas WHERE id_mesa = ?", 
             [id]
@@ -1099,43 +1101,50 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
         if (mesaInfo.length > 0) {
             const nombreMesa = mesaInfo[0].numero_mesa;
 
-            // 2. BUSCAR EL PEDIDO ACTIVO (El que vamos a cobrar)
-            // Buscamos pedidos que no estén ya cerrados
+            // 2. BUSCAR TODOS LOS PEDIDOS ACTIVOS DE ESA MESA
+            // (Sumamos todo lo que no esté cancelado ni archivado)
             const [pedidosActivos] = await connection.query(
-                `SELECT id_pedido, total_calculado 
+                `SELECT total_calculado 
                  FROM pedidos 
                  WHERE mesa = ? AND id_restaurante = ? 
                  AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
                 [nombreMesa, id_restaurante]
             );
 
-            // SI ENCONTRAMOS UN PEDIDO PENDIENTE, LO COBRAMOS
+            // Si hay consumo pendiente, lo registramos y cerramos
             if (pedidosActivos.length > 0) {
-                const pedido = pedidosActivos[0];
                 
-                // A. Registrar el Ingreso en Finanzas
-                const descripcion = `Ingreso Pedido #${pedido.id_pedido} (${nombreMesa})`;
+                // A. Calcular el GRAN TOTAL de la mesa (Suma de todas las rondas)
+                const totalCobrado = pedidosActivos.reduce((sum, p) => sum + parseFloat(p.total_calculado), 0);
+                
+                // B. Registrar el Ingreso en Finanzas (Un solo movimiento por el total)
+                const descripcion = `Cierre ${nombreMesa} (${pedidosActivos.length} órdenes)`;
                 await connection.query(
                     `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
                      VALUES (?, 'ingreso', ?, ?, NOW())`,
-                    [id_restaurante, pedido.total_calculado, descripcion]
+                    [id_restaurante, totalCobrado, descripcion]
                 );
 
-                // B. Cerrar el pedido (Pasar a inactivo)
+                // C. ¡EL PASO CLAVE! CERRAR TODOS LOS PEDIDOS DE GOLPE
+                // Esto asegura que la mesa quede 100% limpia para el siguiente cliente
                 await connection.query(
-                    "UPDATE pedidos SET estado = 'inactivo' WHERE id_pedido = ?",
-                    [pedido.id_pedido]
+                    `UPDATE pedidos 
+                     SET estado = 'inactivo' 
+                     WHERE mesa = ? AND id_restaurante = ? 
+                     AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+                    [nombreMesa, id_restaurante]
                 );
             }
         }
 
+        // 3. Liberar la mesa físicamente (Borrar PIN y cambiar estado)
         await connection.query(
             "UPDATE mesas SET estado = 'libre', codigo_sesion = NULL WHERE id_mesa = ? AND id_restaurante = ?",
             [id, id_restaurante]
         );
         
         await connection.commit();
-        res.json({ message: 'Mesa liberada, pedido cerrado y venta registrada.' });
+        res.json({ message: 'Mesa liberada y pedidos cerrados correctamente.' });
 
     } catch (error) {
         await connection.rollback();
