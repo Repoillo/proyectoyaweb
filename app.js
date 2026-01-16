@@ -1439,17 +1439,18 @@ app.post('/api/movil/cuenta', async (req, res) => {
         connection.release();
     }
 });
-
 // ==========================================
-// RUTA 2: EL CEREBRO (Estado + Datos para Ticket PDF)
+// RUTA ÚNICA: SEGUIMIENTO DE PEDIDO (PIN)
 // ==========================================
-// Esta ruta alimenta tanto al Monitor de Estado como al Generador de PDF
+// Esta ruta sustituye a todas las anteriores de "estado-pedido".
+// Sirve para: Ver estado, Llenar el Ticket y Habilitar el pago.
 app.get('/api/movil/seguimiento/:pin', async (req, res) => {
     const { pin } = req.params;
     const id_restaurante = 1;
 
     try {
-        // 1. Buscamos Mesa + Pedido + Info Restaurante (para el ticket)
+        // 1. Buscamos el PEDIDO ACTIVO usando el PIN de la mesa
+        // Corregimos el JOIN: Usamos 'm.numero_mesa = p.mesa' porque así está tu BD
         const [info] = await pool.query(
             `SELECT 
                 p.id_pedido, 
@@ -1457,55 +1458,54 @@ app.get('/api/movil/seguimiento/:pin', async (req, res) => {
                 p.total_calculado as total, 
                 p.fecha_creacion,
                 p.mesa,
-                r.nombre_restaurante,
-                r.direccion as direccion_restaurante
+                r.nombre_restaurante
              FROM mesas m 
              JOIN pedidos p ON m.numero_mesa = p.mesa 
              JOIN restaurante r ON m.id_restaurante = r.id_restaurante
              WHERE m.codigo_sesion = ? 
-               AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo', 'pagado')
-               AND m.id_restaurante = ?`,
+               AND m.id_restaurante = ?
+               AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo', 'pagado')`,
             [pin, id_restaurante]
         );
 
-        // Si no hay pedido activo, devolvemos inactivo
+        // Si no hay pedido activo, avisamos a la app
         if (info.length === 0) {
-            return res.json({ activo: false, estado: 'inactivo' });
+            return res.json({ activo: false });
         }
 
         const datosGenerales = info[0];
 
-        // 2. Buscamos los items (para el desglose del ticket)
-        const [items] = await pool.query(
-            `SELECT p.nombre, pd.cantidad, pd.precio_en_pedido 
+        // 2. Buscamos los DETALLES (Productos)
+        // Corregimos la tabla: Es 'pedido_detalles', NO 'detalles_pedido'
+        const [detalles] = await pool.query(
+            `SELECT 
+                prod.nombre, 
+                pd.cantidad, 
+                pd.precio_en_pedido as precio,
+                (pd.cantidad * pd.precio_en_pedido) as subtotal
              FROM pedido_detalles pd
-             JOIN productos p ON pd.id_producto = p.id_producto
+             JOIN productos prod ON pd.id_producto = prod.id_producto
              WHERE pd.id_pedido = ?`,
             [datosGenerales.id_pedido]
         );
 
-        // 3. Respuesta completa
+        // 3. Enviamos todo listo para la App
         res.json({
             activo: true,
-            estado: datosGenerales.estado, // sin_ver, en_proceso, completado, por_pagar
+            estado: datosGenerales.estado,
             ticket: {
                 folio: `ORD-${datosGenerales.id_pedido}`,
                 fecha: datosGenerales.fecha_creacion,
                 restaurante: datosGenerales.nombre_restaurante,
                 mesa: datosGenerales.mesa,
-                items: items.map(i => ({
-                    nombre: i.nombre,
-                    cantidad: i.cantidad,
-                    precio: i.precio_en_pedido,
-                    subtotal: i.cantidad * i.precio_en_pedido
-                })),
-                total: datosGenerales.total
+                total: datosGenerales.total,
+                items: detalles // Lista de productos corregida
             }
         });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error al consultar seguimiento.' });
+        console.error("Error en seguimiento:", error);
+        res.status(500).json({ message: 'Error interno del servidor' });
     }
 });
 
@@ -1664,90 +1664,6 @@ app.get('/api/movil/ticket', async (req, res) => {
     }
 });
 
-// 3. CONSULTAR ESTADO (El "Latido" de la App)
-// La App consultará esto cada X segundos para saber si cambia de "en proceso" a "completado"
-app.get('/api/movil/estado-pedido', async (req, res) => {
-    let { numero_mesa } = req.query;
-    const id_restaurante = 1;
-
-    if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa')) {
-        numero_mesa = `Mesa ${numero_mesa}`;
-    }
-
-    try {
-        const [pedidos] = await pool.query(
-            `SELECT estado, metodo_pago 
-             FROM pedidos 
-             WHERE mesa = ? AND id_restaurante = ? 
-             AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
-            [numero_mesa, id_restaurante]
-        );
-
-        if (pedidos.length === 0) {
-            // Si no hay pedido, la mesa está libre o limpia
-            return res.json({ estado: 'sin_pedido' });
-        }
-
-        // Devolvemos el estado para que la App reaccione (ej. cambie pantalla a "Buen Provecho")
-        res.json({ 
-            estado: pedidos[0].estado,
-            metodo_pago: pedidos[0].metodo_pago
-        });
-
-    } catch (error) {
-        console.error('Error consultando estado:', error);
-        res.status(500).json({ message: 'Error de servidor' });
-    }
-});
-// RUTA 3: El "Ojo" de la App (Ver Estado y Ticket)
-app.get('/api/movil/estado-pedido/:pin', async (req, res) => {
-    const { pin } = req.params;
-
-    try {
-        // 1. Buscamos si este PIN corresponde a una mesa con pedido activo
-        // OJO: Asumimos que guardas el PIN en 'codigo_sesion' de la mesa
-        const [mesa] = await pool.query(
-            `SELECT m.numero_mesa, p.id_pedido, p.estado, p.total 
-             FROM mesas m 
-             JOIN pedidos p ON m.id_mesa = p.id_mesa 
-             WHERE m.codigo_sesion = ? AND p.estado != 'pagado' AND p.estado != 'cancelado'`,
-            [pin]
-        );
-
-        // Si no hay mesa con ese PIN o no tiene pedido activo
-        if (mesa.length === 0) {
-            return res.json({ 
-                activo: false, 
-                mensaje: "No hay pedido activo o PIN incorrecto." 
-            });
-        }
-
-        const datosPedido = mesa[0];
-
-        // 2. Buscamos los items para armar el "Ticket en condiciones"
-        const [items] = await pool.query(
-            `SELECT dp.cantidad, prod.nombre, dp.precio_unitario, (dp.cantidad * dp.precio_unitario) as subtotal
-             FROM detalles_pedido dp
-             JOIN productos prod ON dp.id_producto = prod.id_producto
-             WHERE dp.id_pedido = ?`,
-            [datosPedido.id_pedido]
-        );
-
-        // 3. Respondemos con TODO lo que necesita la App
-        res.json({
-            activo: true,
-            mesa: datosPedido.numero_mesa,
-            id_pedido: datosPedido.id_pedido,
-            estado: datosPedido.estado, // "pendiente", "cocinando", "comiendo", "por_pagar"
-            total: datosPedido.total,
-            items: items // Aquí va la lista para el ticket
-        });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Error al consultar estado.' });
-    }
-});
 app.get('/api/movil/menu', async (req, res) => {
     const { restaurant_id } = req.query; 
     const idRestaurante = restaurant_id || 1;
