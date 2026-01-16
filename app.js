@@ -1387,14 +1387,12 @@ app.post('/api/finanzas/egreso', requireAuth, requireOwner, async (req, res) => 
     }
 });
 // ==========================================
-// RUTA 1: PEDIR LA CUENTA (El Modal "¡YA terminé!")
+// RUTA: PEDIR CUENTA (Cierra TODAS las rondas)
 // ==========================================
 app.post('/api/movil/cuenta', async (req, res) => {
-    // Solo necesitamos el PIN y el método de pago. La mesa la sacamos del PIN.
     const { pin, metodo_pago } = req.body; 
     const id_restaurante = 1; 
 
-    // Validación básica
     if (!['efectivo', 'tarjeta'].includes(metodo_pago)) {
         return res.status(400).json({ message: 'Método de pago inválido.' });
     }
@@ -1402,35 +1400,41 @@ app.post('/api/movil/cuenta', async (req, res) => {
     const connection = await pool.getConnection();
 
     try {
-        // 1. Averiguar mesa y pedido activo usando el PIN
-        const [mesaCheck] = await connection.query(
-            `SELECT m.numero_mesa, p.id_pedido 
-             FROM mesas m
-             JOIN pedidos p ON m.numero_mesa = p.mesa AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo', 'pagado')
-             WHERE m.codigo_sesion = ? AND m.id_restaurante = ?`,
+        // 1. Obtener la mesa a partir del PIN
+        const [mesaRow] = await connection.query(
+            "SELECT numero_mesa FROM mesas WHERE codigo_sesion = ? AND id_restaurante = ?",
             [pin, id_restaurante]
         );
 
-        if (mesaCheck.length === 0) {
-            return res.status(404).json({ message: 'No se encontró un pedido activo para este PIN.' });
+        if (mesaRow.length === 0) {
+            return res.status(404).json({ message: 'Sesión no encontrada.' });
         }
+        const nombreMesa = mesaRow[0].numero_mesa;
 
-        const { id_pedido, numero_mesa } = mesaCheck[0];
-
-        // 2. Actualizar estado
+        // 2. ACTUALIZACIÓN MASIVA
+        // Pasamos a 'por_pagar' TODOS los pedidos activos de esa mesa
         const [result] = await connection.query(
             `UPDATE pedidos 
              SET estado = 'por_pagar', 
                  metodo_pago = ? 
-             WHERE id_pedido = ?`,
-            [metodo_pago, id_pedido]
+             WHERE mesa = ? 
+               AND id_restaurante = ?
+               AND estado NOT IN ('cancelado', 'archivado', 'inactivo', 'por_pagar')`,
+            [metodo_pago, nombreMesa, id_restaurante]
         );
 
         if (result.affectedRows === 0) {
-             return res.json({ message: 'No se pudo actualizar el estado del pedido.' });
+             // Chequeo de seguridad: ¿Quizás ya la pidieron?
+             const [check] = await connection.query(
+                `SELECT id_pedido FROM pedidos WHERE mesa = ? AND estado = 'por_pagar'`,
+                [nombreMesa]
+             );
+             if (check.length > 0) return res.json({ message: 'Cuenta ya solicitada anteriormente.' });
+             
+             return res.json({ message: 'No hay pedidos pendientes por cobrar.' });
         }
 
-        res.json({ message: 'Cuenta solicitada. El estado ha cambiado a espera de pago.' });
+        res.json({ message: 'Cuenta solicitada. El mesero traerá el total acumulado.' });
 
     } catch (error) {
         console.error('Error pidiendo cuenta:', error);
@@ -1440,22 +1444,19 @@ app.post('/api/movil/cuenta', async (req, res) => {
     }
 });
 // ==========================================
-// RUTA ÚNICA: SEGUIMIENTO DE PEDIDO (PIN)
+// RUTA: SEGUIMIENTO DE "SESIÓN" (Agrupa múltiples pedidos)
 // ==========================================
-// Esta ruta sustituye a todas las anteriores de "estado-pedido".
-// Sirve para: Ver estado, Llenar el Ticket y Habilitar el pago.
 app.get('/api/movil/seguimiento/:pin', async (req, res) => {
     const { pin } = req.params;
     const id_restaurante = 1;
 
     try {
-        // 1. Buscamos el PEDIDO ACTIVO usando el PIN de la mesa
-        // Corregimos el JOIN: Usamos 'm.numero_mesa = p.mesa' porque así está tu BD
-        const [info] = await pool.query(
+        // 1. Buscamos TODOS los pedidos activos asociados a este PIN
+        const [pedidos] = await pool.query(
             `SELECT 
                 p.id_pedido, 
                 p.estado, 
-                p.total_calculado as total, 
+                p.total_calculado, 
                 p.fecha_creacion,
                 p.mesa,
                 r.nombre_restaurante
@@ -1464,51 +1465,65 @@ app.get('/api/movil/seguimiento/:pin', async (req, res) => {
              JOIN restaurante r ON m.id_restaurante = r.id_restaurante
              WHERE m.codigo_sesion = ? 
                AND m.id_restaurante = ?
-               AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo', 'pagado')`,
+               -- Traemos todo lo que NO esté muerto (cancelado, archivado, inactivo)
+               AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
             [pin, id_restaurante]
         );
 
-        // Si no hay pedido activo, avisamos a la app
-        if (info.length === 0) {
+        if (pedidos.length === 0) {
             return res.json({ activo: false });
         }
 
-        const datosGenerales = info[0];
+        // 2. CÁLCULO DE TOTALES ACUMULADOS
+        // Sumamos el dinero de todas las rondas de pedidos
+        const granTotal = pedidos.reduce((sum, p) => sum + parseFloat(p.total_calculado), 0);
+        
+        // Determinamos el "Estado Global" para la barra de color
+        // Si al menos uno está "en proceso", la mesa está "en proceso".
+        // Si todos están "completado", la mesa está "completada".
+        // Si alguno está "por_pagar", toda la mesa está esperando cuenta.
+        let estadoGlobal = 'completado';
+        if (pedidos.some(p => p.estado === 'por_pagar')) estadoGlobal = 'por_pagar';
+        else if (pedidos.some(p => p.estado === 'en proceso' || p.estado === 'sin ver')) estadoGlobal = 'en_proceso';
 
-        // 2. Buscamos los DETALLES (Productos)
-        // Corregimos la tabla: Es 'pedido_detalles', NO 'detalles_pedido'
-        const [detalles] = await pool.query(
+        // 3. Extraemos los IDs de los pedidos para buscar sus productos
+        const idsPedidos = pedidos.map(p => p.id_pedido);
+
+        // 4. Buscamos TODOS los productos de TODAS las rondas
+        // Hacemos JOIN con pedidos para saber el estado de cada platillo individualmente
+        const [items] = await pool.query(
             `SELECT 
                 prod.nombre, 
                 pd.cantidad, 
                 pd.precio_en_pedido as precio,
-                (pd.cantidad * pd.precio_en_pedido) as subtotal
+                (pd.cantidad * pd.precio_en_pedido) as subtotal,
+                p.estado as estado_producto -- Para saber si este item ya se sirvió o no
              FROM pedido_detalles pd
              JOIN productos prod ON pd.id_producto = prod.id_producto
-             WHERE pd.id_pedido = ?`,
-            [datosGenerales.id_pedido]
+             JOIN pedidos p ON pd.id_pedido = p.id_pedido
+             WHERE pd.id_pedido IN (?)`,
+            [idsPedidos]
         );
 
-        // 3. Enviamos todo listo para la App
+        // 5. Enviamos el "Super Ticket" fusionado
         res.json({
             activo: true,
-            estado: datosGenerales.estado,
+            estado: estadoGlobal, 
             ticket: {
-                folio: `ORD-${datosGenerales.id_pedido}`,
-                fecha: datosGenerales.fecha_creacion,
-                restaurante: datosGenerales.nombre_restaurante,
-                mesa: datosGenerales.mesa,
-                total: datosGenerales.total,
-                items: detalles // Lista de productos corregida
+                folio: `MESA-${pedidos[0].mesa.replace('Mesa ', '')}`, // Folio genérico de mesa
+                fecha: pedidos[0].fecha_creacion, // Fecha del primer pedido
+                restaurante: pedidos[0].nombre_restaurante,
+                mesa: pedidos[0].mesa,
+                total: granTotal, // Total acumulado real
+                items: items // Lista con TODO lo que han pedido
             }
         });
 
     } catch (error) {
         console.error("Error en seguimiento:", error);
-        res.status(500).json({ message: 'Error interno del servidor' });
+        res.status(500).json({ message: 'Error interno' });
     }
 });
-
 app.post('/api/finanzas/gastos-fijos', requireAuth, requireOwner, async (req, res) => {
     const { concepto, monto } = req.body;
     const montoFloat = parseFloat(monto);
