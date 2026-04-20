@@ -16,6 +16,37 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
+-- Table structure for table `chat_historial`
+--
+
+DROP TABLE IF EXISTS `chat_historial`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `chat_historial` (
+  `id_mensaje` int NOT NULL AUTO_INCREMENT,
+  `id_restaurante` int NOT NULL,
+  `id_usuario` int NOT NULL,
+  `rol_mensaje` enum('user','model') NOT NULL,
+  `contenido` text NOT NULL,
+  `fecha_mensaje` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_mensaje`),
+  KEY `fk_chat_restaurante` (`id_restaurante`),
+  KEY `fk_chat_usuario` (`id_usuario`),
+  CONSTRAINT `fk_chat_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE,
+  CONSTRAINT `fk_chat_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `m_usuarios` (`id_usuario`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `chat_historial`
+--
+
+LOCK TABLES `chat_historial` WRITE;
+/*!40000 ALTER TABLE `chat_historial` DISABLE KEYS */;
+/*!40000 ALTER TABLE `chat_historial` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `comentarios`
 --
 
@@ -61,7 +92,7 @@ CREATE TABLE `config_gastos_diarios` (
   PRIMARY KEY (`id_gasto_fijo`),
   KEY `id_restaurante` (`id_restaurante`),
   CONSTRAINT `config_gastos_diarios_ibfk_1` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -70,6 +101,7 @@ CREATE TABLE `config_gastos_diarios` (
 
 LOCK TABLES `config_gastos_diarios` WRITE;
 /*!40000 ALTER TABLE `config_gastos_diarios` DISABLE KEYS */;
+INSERT INTO `config_gastos_diarios` VALUES (7,1,'luz',100.00);
 /*!40000 ALTER TABLE `config_gastos_diarios` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -119,6 +151,7 @@ CREATE TABLE `ingredientes` (
   `stock` decimal(10,2) NOT NULL DEFAULT '0.00',
   `estado` enum('activo','inactivo') NOT NULL DEFAULT 'activo',
   `cantidad_por_unidad` decimal(10,2) DEFAULT '1.00' COMMENT 'Cuanto trae el envase (ej. 3750 ml)',
+  `dias_caducidad_estimado` int DEFAULT NULL COMMENT 'Días promedio que dura este producto para auto-calcular caducidad al comprar',
   PRIMARY KEY (`id_ingrediente`),
   UNIQUE KEY `idx_restaurante_nombre_ing` (`id_restaurante`,`nombre`),
   CONSTRAINT `fk_ingredientes_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -131,8 +164,41 @@ CREATE TABLE `ingredientes` (
 
 LOCK TABLES `ingredientes` WRITE;
 /*!40000 ALTER TABLE `ingredientes` DISABLE KEYS */;
-INSERT INTO `ingredientes` VALUES (1,1,'Leche','ml',0.030000,6000.00,'activo',1000.00);
+INSERT INTO `ingredientes` VALUES (1,1,'Leche','ml',0.035000,79976.00,'activo',1000.00,NULL);
 /*!40000 ALTER TABLE `ingredientes` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `lotes_ingredientes`
+--
+
+DROP TABLE IF EXISTS `lotes_ingredientes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `lotes_ingredientes` (
+  `id_lote` int NOT NULL AUTO_INCREMENT,
+  `id_ingrediente` int NOT NULL,
+  `id_restaurante` int NOT NULL,
+  `cantidad_inicial` decimal(10,2) NOT NULL COMMENT 'Lo que se compró originalmente',
+  `cantidad_actual` decimal(10,2) NOT NULL COMMENT 'Lo que queda de este lote',
+  `fecha_compra` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `fecha_caducidad` date NOT NULL,
+  `estado` enum('disponible','agotado','caducado','desechado') NOT NULL DEFAULT 'disponible',
+  PRIMARY KEY (`id_lote`),
+  KEY `fk_lote_ingrediente` (`id_ingrediente`),
+  KEY `fk_lote_restaurante` (`id_restaurante`),
+  CONSTRAINT `fk_lote_ingrediente` FOREIGN KEY (`id_ingrediente`) REFERENCES `ingredientes` (`id_ingrediente`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lote_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `lotes_ingredientes`
+--
+
+LOCK TABLES `lotes_ingredientes` WRITE;
+/*!40000 ALTER TABLE `lotes_ingredientes` DISABLE KEYS */;
+/*!40000 ALTER TABLE `lotes_ingredientes` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -183,7 +249,7 @@ CREATE TABLE `mesas` (
   PRIMARY KEY (`id_mesa`),
   KEY `fk_mesas_restaurante` (`id_restaurante`),
   CONSTRAINT `fk_mesas_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -192,7 +258,7 @@ CREATE TABLE `mesas` (
 
 LOCK TABLES `mesas` WRITE;
 /*!40000 ALTER TABLE `mesas` DISABLE KEYS */;
-INSERT INTO `mesas` VALUES (4,1,'Mesa 1','libre',NULL),(5,1,'Mesa 2','libre',NULL),(6,1,'Mesa 3','ocupada','369');
+INSERT INTO `mesas` VALUES (6,1,'Mesa 3','libre',NULL),(7,1,'Mesa 1','libre',NULL),(8,1,'Mesa 2','ocupada','862'),(9,1,'Barra 8','ocupada','649');
 /*!40000 ALTER TABLE `mesas` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -207,13 +273,14 @@ CREATE TABLE `movimientos_financieros` (
   `id_movimiento` int NOT NULL AUTO_INCREMENT,
   `id_restaurante` int NOT NULL,
   `tipo` enum('ingreso','egreso') NOT NULL,
+  `categoria` enum('nomina','insumos','servicios','otros','venta') DEFAULT 'otros',
   `monto` decimal(12,2) NOT NULL,
   `descripcion` varchar(255) DEFAULT NULL,
   `fecha` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_movimiento`),
   KEY `fk_movimientos_restaurante` (`id_restaurante`),
   CONSTRAINT `fk_movimientos_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -222,7 +289,6 @@ CREATE TABLE `movimientos_financieros` (
 
 LOCK TABLES `movimientos_financieros` WRITE;
 /*!40000 ALTER TABLE `movimientos_financieros` DISABLE KEYS */;
-INSERT INTO `movimientos_financieros` VALUES (1,1,'egreso',25.00,'pepe','2025-11-19 12:13:11'),(2,1,'ingreso',40.00,'Ingreso Pedido #3 (Mesa 1)','2025-11-19 12:31:29'),(3,1,'ingreso',1500.00,'Ventas del Lunes','2025-11-18 12:34:17'),(4,1,'ingreso',2300.50,'Ventas del Domingo','2025-11-17 12:34:17'),(5,1,'ingreso',1800.00,'Ventas del Sábado','2025-11-16 12:34:17'),(6,1,'ingreso',1200.00,'Ventas del Viernes','2025-11-15 12:34:17'),(7,1,'ingreso',900.00,'Ventas del Jueves','2025-11-14 12:34:17'),(8,1,'egreso',200.00,'Compra Hielo','2025-11-18 12:34:17'),(9,1,'egreso',500.00,'Pago Proveedor Carne','2025-11-16 12:34:17'),(10,1,'egreso',150.00,'Gasolina','2025-11-15 12:34:17');
 /*!40000 ALTER TABLE `movimientos_financieros` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -244,7 +310,7 @@ CREATE TABLE `pedido_detalles` (
   KEY `fk_detalle_producto` (`id_producto`),
   CONSTRAINT `fk_detalle_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_detalle_producto` FOREIGN KEY (`id_producto`) REFERENCES `productos` (`id_producto`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -253,7 +319,6 @@ CREATE TABLE `pedido_detalles` (
 
 LOCK TABLES `pedido_detalles` WRITE;
 /*!40000 ALTER TABLE `pedido_detalles` DISABLE KEYS */;
-INSERT INTO `pedido_detalles` VALUES (1,1,1,2,20.00),(2,1,2,1,25.00),(3,2,1,1,20.00),(4,2,2,1,25.00),(5,3,1,2,20.00);
 /*!40000 ALTER TABLE `pedido_detalles` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -274,10 +339,13 @@ CREATE TABLE `pedidos` (
   `fecha_creacion` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `solicito_pago` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1 si el cliente ya aviso que pago',
   `metodo_pago` enum('efectivo','tarjeta') DEFAULT NULL COMMENT 'Se llena cuando el cliente pide la cuenta',
+  `fecha_en_proceso` datetime DEFAULT NULL COMMENT 'Cuando el cocinero empieza',
+  `fecha_completado` datetime DEFAULT NULL COMMENT 'Cuando el plato está listo',
+  `fecha_pago` datetime DEFAULT NULL COMMENT 'Cuando el cliente paga',
   PRIMARY KEY (`id_pedido`),
   KEY `fk_pedidos_restaurante` (`id_restaurante`),
   CONSTRAINT `fk_pedidos_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -286,7 +354,6 @@ CREATE TABLE `pedidos` (
 
 LOCK TABLES `pedidos` WRITE;
 /*!40000 ALTER TABLE `pedidos` DISABLE KEYS */;
-INSERT INTO `pedidos` VALUES (1,1,'Mesa 10','Cliente Histórico 1',65.00,'archivado','2025-11-19 10:48:08',1,NULL),(2,1,'Mesa 5','Cliente Histórico 2',45.00,'archivado','2025-11-19 08:48:08',1,NULL),(3,1,'Mesa 1','App Cliente',40.00,'archivado','2025-11-19 12:23:48',0,NULL),(4,1,'Mesa 1','Cliente Tarjeta',500.00,'por_pagar','2025-11-23 21:09:07',1,'tarjeta'),(5,1,'Mesa 2','Cliente Efectivo',120.00,'por_pagar','2025-11-23 21:09:07',1,'efectivo'),(6,1,'Mesa 3','Cliente Tranquilo',800.00,'en proceso','2025-11-23 21:09:07',0,NULL);
 /*!40000 ALTER TABLE `pedidos` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -318,7 +385,7 @@ CREATE TABLE `productos` (
 
 LOCK TABLES `productos` WRITE;
 /*!40000 ALTER TABLE `productos` DISABLE KEYS */;
-INSERT INTO `productos` VALUES (1,1,'Taco de Prueba','Delicioso',20.00,'platillo','inactivo',NULL),(2,1,'Refresco','Bien frio',25.00,'bebida','inactivo',NULL),(3,1,'Leche','ayuda',232.00,'platillo','activo',NULL);
+INSERT INTO `productos` VALUES (1,1,'Taco de Prueba','Delicioso',20.00,'platillo','inactivo',NULL),(2,1,'Refresco','Bien frio',25.00,'bebida','inactivo',NULL),(3,1,'Leche entera','ayuda',235.00,'platillo','activo',NULL);
 /*!40000 ALTER TABLE `productos` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -397,7 +464,7 @@ CREATE TABLE `sessions` (
 
 LOCK TABLES `sessions` WRITE;
 /*!40000 ALTER TABLE `sessions` DISABLE KEYS */;
-INSERT INTO `sessions` VALUES ('3oebBA5bGWQjCADDz-S6zJrpJ30RW0p9',1765081325,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-07T04:22:04.835Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"angel\'s Restaurant\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}'),('DAPnovnw-96vfj0UP67ZVEXOt0ACPrux',1765080806,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-07T04:13:09.819Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"angel\'s Restaurant\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}'),('d8Q7lrnZ0IjnUXVIDG7OEDwx-7mTsCvk',1765082768,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2025-12-07T04:33:00.857Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"angel\'s Restaurant\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}');
+INSERT INTO `sessions` VALUES ('ATVvLa8ctTmbT6GX8Br5aLuNM_ygMOdU',1769018321,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2026-01-21T17:21:33.270Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"angel\'s Restaurant\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}');
 /*!40000 ALTER TABLE `sessions` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -488,4 +555,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-12-02 16:06:12
+-- Dump completed on 2026-04-20 11:21:03
