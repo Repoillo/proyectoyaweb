@@ -260,14 +260,27 @@ document.addEventListener('DOMContentLoaded', () => {
     function habilitarBotones(panel) {
         const btnEditar = panel.querySelector('.botonEditar');
         if(btnEditar) btnEditar.disabled = false;
-        panel.querySelector('.botonEliminar').disabled = false;
+        
+        const btnEliminar = panel.querySelector('.botonEliminar');
+        if(btnEliminar) btnEliminar.disabled = false;
+
+        // Nuevo botón de Lotes
+        const btnLotes = panel.querySelector('#btnGestionarLotes');
+        if(btnLotes) btnLotes.disabled = false;
     }
     
     function deshabilitarBotones(panel) {
         if (!panel) return;
         const btnEditar = panel.querySelector('.botonEditar');
         if(btnEditar) btnEditar.disabled = true;
-        panel.querySelector('.botonEliminar').disabled = true;
+        
+        const btnEliminar = panel.querySelector('.botonEliminar');
+        if(btnEliminar) btnEliminar.disabled = true;
+
+        // Nuevo botón de Lotes
+        const btnLotes = panel.querySelector('#btnGestionarLotes');
+        if(btnLotes) btnLotes.disabled = true;
+
         if (filaSeleccionada) {
             filaSeleccionada.classList.remove('seleccionado');
             filaSeleccionada = null;
@@ -425,16 +438,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } else if (seccion === 'ingredientes') {
              let costoCaja = '';
-             let envasesExactos = 0;
-             let envasesVisuales = 0;
-             let contenidoTotal = parseFloat(datos.cantidad_disponible || 0);
-             let contenidoPorEnvase = parseFloat(datos.cantidad_por_unidad || 1);
-             
-             if (contenidoTotal > 0 && contenidoPorEnvase > 0) {
-                 envasesExactos = contenidoTotal / contenidoPorEnvase;
-                 envasesVisuales = Math.ceil(envasesExactos);
-             }
-             
              if (datos.costo_ing && datos.cantidad_por_unidad) {
                 costoCaja = (parseFloat(datos.costo_ing) * parseFloat(datos.cantidad_por_unidad)).toFixed(2);
              }
@@ -457,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <div style="background:#f0f4f8; padding:15px; margin-top:10px; border-radius:8px; border:1px solid #dae1e7;">
                     <h4 style="margin-top:0; color:var(--primaryblue); margin-bottom:10px;">
-                        <ion-icon name="cube-outline"></ion-icon> Inventario y Presentación
+                        <ion-icon name="cube-outline"></ion-icon> Configuración del Envase
                     </h4>
                     
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
@@ -467,28 +470,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         <div>
                             <label>Costo del Envase ($):</label>
-                            <input type="number" name="costo_compra" value="${costoCaja}" step="0.01" min="0" max="50000">
+                            <input type="number" name="costo_compra" value="${costoCaja}" step="0.01" min="0" max="50000" required>
                         </div>
-                    </div>
-
-                    <div style="background: #fff; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid var(--primaryorange);">
-                        <strong style="color: #2c3e50; font-size: 1.1em;">
-                            Stock Actual: ${envasesVisuales} Envases en uso
-                        </strong>
-                        <div style="font-size: 0.85em; color: #7f8c8d;">
-                            Exacto: ${envasesExactos.toFixed(2)} envases (${contenidoTotal} ${escapeHTML(datos.unidad_medida || '')})
-                        </div>
-                    </div>
-
-                    <div style="margin-top: 10px;">
-                        <label style="font-weight:bold;">Ajustar Cantidad (Opcional):</label>
-                        <input type="number" name="piezas_compradas" value="" step="0.1" min="0" max="10000"
-                            placeholder="Escribe solo si quieres CAMBIAR el stock..."
-                            style="border: 1px dashed #aaa;">
-                        <small style="color:#e74c3c;">* Si lo dejas vacío, se mantiene el stock exacto actual (${contenidoTotal}).</small>
                     </div>
                     
-                    <input type="hidden" name="cantidad_disponible" value="${datos.cantidad_disponible || 0}">
+                    <div style="margin-top: 15px;">
+                        <label style="font-weight:bold; color: var(--primaryorange);">Días de Caducidad (Promedio):</label>
+                        <input type="number" name="dias_caducidad_estimado" value="${datos.dias_caducidad_estimado || 15}" min="1" max="365" required>
+                        <small style="color:#7f8c8d; display:block; margin-top:5px;">* ¿Cuántos días dura este producto normalmente desde que lo compras? Esto ayudará a la IA a predecir fechas.</small>
+                    </div>
                 </div>`;
 
         } else if (seccion === 'empleados') {
@@ -564,22 +554,171 @@ document.addEventListener('DOMContentLoaded', () => {
         if(btnMain) btnMain.style.display = 'block';
     });
 
+   // --- VARIABLES GLOBALES PARA GRÁFICAS ---
+    let chartVentasInstancia = null;
+    let chartCocinaInstancia = null;
+    let chartMesasInstancia = null;
+
     async function cargarFinanzas() {
         if(!listaFinanzasDias) return;
-        listaFinanzasDias.innerHTML = '<p style="text-align:center;">Cargando calendario financiero...</p>';
+        listaFinanzasDias.innerHTML = '<p style="text-align:center;">Cargando panel financiero...</p>';
         
         try {
-            const res = await fetch('/api/finanzas/resumen', { credentials: 'include' });
-            if(!res.ok) throw new Error("Error obteniendo resumen");
+            // Pedimos los datos del nuevo dashboard y el historial al mismo tiempo para mayor velocidad
+            const [resDashboard, resResumen] = await Promise.all([
+                fetch('/api/finanzas/dashboard', { credentials: 'include' }),
+                fetch('/api/finanzas/resumen', { credentials: 'include' })
+            ]);
+
+            if(!resDashboard.ok || !resResumen.ok) throw new Error("Error obteniendo datos financieros");
             
-            const dias = await res.json();
+            const dashboard = await resDashboard.json();
+            const dias = await resResumen.json();
+            
             datosFinanzasCache = dias;
+            
+            // 1. Llenar KPIs
+            llenarKPIs(dashboard.kpis);
+            
+            // 2. Llenar Métricas Operativas
+            llenarOperativa(dashboard.operativa);
+            
+            // 3. Dibujar Gráficas
+            renderizarGraficaVentas(dashboard.grafica7Dias);
+            renderizarGraficasEficiencia(dashboard.operativa);
+
+            // 4. Llenar Historial Inferior y Comparador (Tu código original intacto)
             renderizarFinanzas(dias);
             llenarSelectoresComparacion(dias);
 
         } catch (error) {
             console.error('Error:', error);
-            listaFinanzasDias.innerHTML = '<p style="color:red; text-align:center;">Error de conexión.</p>';
+            listaFinanzasDias.innerHTML = '<p style="color:red; text-align:center;">Error de conexión con el dashboard.</p>';
+        }
+    }
+
+    function llenarKPIs(kpis) {
+        const ingresosHoy = kpis.hoy.ingresos;
+        const egresosHoy = kpis.hoy.egresos;
+        const utilidadHoy = ingresosHoy - egresosHoy;
+
+        getEl('kpiIngresos').textContent = `$${ingresosHoy.toFixed(2)}`;
+        getEl('kpiEgresos').textContent = `$${egresosHoy.toFixed(2)}`;
+        getEl('kpiUtilidad').textContent = `$${utilidadHoy.toFixed(2)}`;
+        getEl('kpiOrdenes').textContent = kpis.hoy.ordenes;
+
+        // Calcular Tendencias
+        const calcTendencia = (hoy, ayer) => {
+            if (ayer === 0) return hoy > 0 ? 100 : 0;
+            return ((hoy - ayer) / ayer) * 100;
+        };
+
+        const tendIngresos = calcTendencia(ingresosHoy, kpis.ayer.ingresos);
+        const tendEgresos = calcTendencia(egresosHoy, kpis.ayer.egresos);
+
+        const spanTendIngresos = getEl('kpiIngresosTendencia');
+        spanTendIngresos.textContent = `${Math.abs(tendIngresos).toFixed(1)}%`;
+        spanTendIngresos.parentElement.style.color = tendIngresos >= 0 ? '#27ae60' : '#c0392b';
+
+        const spanTendEgresos = getEl('kpiEgresosTendencia');
+        spanTendEgresos.textContent = `${Math.abs(tendEgresos).toFixed(1)}%`;
+        // En gastos, si suben es malo (rojo), si bajan es bueno (verde)
+        spanTendEgresos.parentElement.style.color = tendEgresos <= 0 ? '#27ae60' : '#c0392b';
+    }
+
+    function llenarOperativa(operativa) {
+        getEl('textoTiempoCocina').textContent = operativa.promedioCocinaMin;
+        getEl('textoTiempoMesas').textContent = operativa.promedioMesaMin;
+
+        getEl('platilloRapido').textContent = operativa.platilloRapido ? `${operativa.platilloRapido.nombre} (${operativa.platilloRapido.tiempo}m)` : 'Sin datos hoy';
+        getEl('platilloLento').textContent = operativa.platilloLento ? `${operativa.platilloLento.nombre} (${operativa.platilloLento.tiempo}m)` : 'Sin datos hoy';
+        
+        const badgeCaducidad = getEl('ingredientesCaducidad');
+        badgeCaducidad.textContent = `${operativa.lotesEnRiesgo} Lotes en riesgo`;
+        badgeCaducidad.style.color = operativa.lotesEnRiesgo > 0 ? '#e74c3c' : '#27ae60';
+    }
+
+    function renderizarGraficaVentas(datos7Dias) {
+        const ctx = getEl('chartVentas');
+        if(!ctx) return;
+
+        if (chartVentasInstancia) chartVentasInstancia.destroy();
+
+        // Extraer etiquetas y datos (asegurando el orden cronológico)
+        const labels = datos7Dias.map(d => d.dia.slice(5)); // Solo mes y día
+        const dataIngresos = datos7Dias.map(d => parseFloat(d.ingresos));
+        const dataEgresos = datos7Dias.map(d => parseFloat(d.egresos));
+
+        chartVentasInstancia = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Ingresos',
+                        data: dataIngresos,
+                        backgroundColor: '#3498db',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'Egresos',
+                        data: dataEgresos,
+                        backgroundColor: '#e74c3c',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    }
+
+    function renderizarGraficasEficiencia(operativa) {
+        const ctxCocina = getEl('chartEficienciaCocina');
+        const ctxMesas = getEl('chartEficienciaMesas');
+
+        if (chartCocinaInstancia) chartCocinaInstancia.destroy();
+        if (chartMesasInstancia) chartMesasInstancia.destroy();
+
+        // Parámetro visual: Asumimos que más de 45 min en cocina es "exceso" para llenar la dona
+        const maxCocina = 45;
+        const valorCocina = Math.min(operativa.promedioCocinaMin, maxCocina);
+
+        if(ctxCocina) {
+            chartCocinaInstancia = new Chart(ctxCocina, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [valorCocina, maxCocina - valorCocina],
+                        backgroundColor: ['#f39c12', '#ecf0f1'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { cutout: '80%', responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false } } }
+            });
+        }
+
+        // Parámetro visual: Asumimos que más de 90 min en mesa es "exceso"
+        const maxMesa = 90;
+        const valorMesa = Math.min(operativa.promedioMesaMin, maxMesa);
+
+        if(ctxMesas) {
+            chartMesasInstancia = new Chart(ctxMesas, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [valorMesa, maxMesa - valorMesa],
+                        backgroundColor: ['#9b59b6', '#ecf0f1'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { cutout: '80%', responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false } } }
+            });
         }
     }
 
@@ -1090,4 +1229,125 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
         window.location.href = '/index.html';
     });
+    // --- LÓGICA DE GESTIÓN DE LOTES ---
+const btnGestionarLotes = document.getElementById('btnGestionarLotes');
+
+if (btnGestionarLotes) {
+    btnGestionarLotes.addEventListener('click', () => {
+        if (!itemSeleccionadoId) return;
+        abrirModalGestionLotes(itemSeleccionadoId);
+    });
+}
+
+async function abrirModalGestionLotes(idIngrediente) {
+    // 1. Preparar el Modal (Reutilizamos el modal principal pero cambiamos el contenido)
+    const btnGuardarPrincipal = formulario.querySelector('button[type="submit"]');
+    if (btnGuardarPrincipal) btnGuardarPrincipal.style.display = 'none'; // Ocultamos el guardar del CRUD normal
+
+    const nombreIng = filaSeleccionada.querySelector('td:first-child').textContent;
+    tituloModal.textContent = `Gestión de Lotes: ${nombreIng}`;
+    camposDinamicos.innerHTML = '<p style="text-align:center;">Cargando información de inventario...</p>';
+    modal.classList.remove('oculto');
+
+    try {
+        // 2. Obtener datos del ingrediente y sus lotes
+        const res = await fetch(`/api/ingredientes/${idIngrediente}/detalle-completo`, { credentials: 'include' });
+        if (!res.ok) throw new Error("Error al obtener detalles");
+        const data = await res.json(); // { info: {...}, lotes: [...] }
+
+        // 3. Dibujar la Interfaz de Lotes
+        renderizarInterfazLotes(idIngrediente, data);
+
+    } catch (e) {
+        console.error(e);
+        camposDinamicos.innerHTML = '<p style="color:red; text-align:center;">Error al conectar con el servidor.</p>';
+    }
+}
+
+function renderizarInterfazLotes(id, data) {
+    const { info, lotes } = data;
+    
+    // Generamos la tabla de lotes actuales
+    let tablaLotesHTML = `
+        <div style="margin-bottom:20px;">
+            <h4 style="color:var(--primaryblue); border-bottom:1px solid #eee; padding-bottom:5px;">LOTES ACTIVOS EN COCINA</h4>
+            <div style="max-height:200px; overflow-y:auto; border:1px solid #eee; border-radius:5px;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.9em;">
+                    <thead style="background:#f9f9f9; position:sticky; top:0;">
+                        <tr>
+                            <th style="padding:8px; text-align:left;">Ingreso</th>
+                            <th style="padding:8px; text-align:left;">Caducidad</th>
+                            <th style="padding:8px; text-align:right;">Restante</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+    if (lotes.length === 0) {
+        tablaLotesHTML += `<tr><td colspan="3" style="padding:20px; text-align:center; color:#999;">No hay lotes disponibles. Registra una compra abajo.</td></tr>`;
+    } else {
+        lotes.forEach(l => {
+            const fechaCad = new Date(l.fecha_caducidad).toLocaleDateString();
+            const diasRestantes = Math.ceil((new Date(l.fecha_caducidad) - new Date()) / (1000 * 60 * 60 * 24));
+            const colorCad = diasRestantes <= 3 ? 'color:#e74c3c; font-weight:bold;' : 'color:#27ae60;';
+            
+            tablaLotesHTML += `
+                <tr style="border-bottom:1px solid #f0f0f0;">
+                    <td style="padding:8px;">${new Date(l.fecha_compra).toLocaleDateString()}</td>
+                    <td style="padding:8px; ${colorCad}">${fechaCad} (${diasRestantes}d)</td>
+                    <td style="padding:8px; text-align:right;">${parseFloat(l.cantidad_actual).toFixed(1)} ${info.unidad_medida}</td>
+                </tr>
+            `;
+        });
+    }
+
+    tablaLotesHTML += `</tbody></table></div></div>`;
+
+    // Formulario de Nueva Entrada
+    const formEntradaHTML = `
+        <div style="background:#f0f4f8; padding:15px; border-radius:10px; border:1px solid #dae1e7;">
+            <h4 style="margin-top:0; color:var(--primaryorange);">
+                <ion-icon name="add-circle-outline"></ion-icon> REGISTRAR NUEVA COMPRA
+            </h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div>
+                    <label style="font-size:0.8em; font-weight:bold;">ENVASES:</label>
+                    <input type="number" id="nuevosEnvases" placeholder="Ej. 5" style="width:100%; padding:8px; margin-top:5px;">
+                </div>
+                <div>
+                    <label style="font-size:0.8em; font-weight:bold;">CADUCIDAD:</label>
+                    <input type="date" id="nuevaCaducidad" style="width:100%; padding:8px; margin-top:5px;">
+                </div>
+            </div>
+            <button type="button" id="btnGuardarLote" class="boton" style="width:100%; margin-top:15px; background:var(--primaryorange);">
+                Añadir al Inventario
+            </button>
+        </div>
+    `;
+
+    camposDinamicos.innerHTML = tablaLotesHTML + formEntradaHTML;
+
+    // Lógica del botón Guardar Lote
+    document.getElementById('btnGuardarLote').onclick = async () => {
+        const cant = document.getElementById('nuevosEnvases').value;
+        const cad = document.getElementById('nuevaCaducidad').value;
+
+        if (!cant || !cad) return alert("Por favor llena la cantidad y la fecha.");
+
+        try {
+            const res = await fetch(`/api/ingredientes/${id}/lotes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ envases: cant, fecha_caducidad: cad }),
+                credentials: 'include'
+            });
+
+            if (res.ok) {
+                alert("Inventario actualizado correctamente.");
+                modal.classList.add('oculto');
+                cargarDatos('ingredientes'); // Recarga la tabla principal
+            }
+        } catch (e) { console.error(e); }
+    };
+}
 });

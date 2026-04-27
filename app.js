@@ -5,7 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
-
+const cron = require('node-cron');
 const app = express();
 
 app.use(cors({
@@ -396,6 +396,72 @@ app.get('/api/recetas/:id_producto', requireAuth, requireOwner, async (req, res)
     }
 });
 
+// GET: Detalle completo de un ingrediente (Info base + Lotes activos)
+app.get('/api/ingredientes/:id/detalle-completo', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const id_rest = req.session.restauranteId;
+
+        // 1. Info básica
+        const [info] = await pool.query(
+            "SELECT nombre, unidad_medida, cantidad_por_unidad, costo_unitario FROM ingredientes WHERE id_ingrediente = ? AND id_restaurante = ?",
+            [id, id_rest]
+        );
+
+        // 2. Lotes disponibles (Ordenados por caducidad - FIFO)
+        const [lotes] = await pool.query(
+            "SELECT * FROM lotes_ingredientes WHERE id_ingrediente = ? AND estado = 'disponible' ORDER BY fecha_caducidad ASC",
+            [id]
+        );
+
+        res.json({ info: info[0], lotes: lotes });
+    } catch (error) {
+        res.status(500).json({ message: 'Error al obtener detalles.' });
+    }
+});
+
+// POST: Registrar nueva compra (Nuevo Lote)
+app.post('/api/ingredientes/:id/lotes', requireAuth, requireOwner, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { id } = req.params;
+        const { envases, fecha_caducidad } = req.body;
+        const id_rest = req.session.restauranteId;
+
+        await connection.beginTransaction();
+
+        // 1. Obtener datos del envase para el cálculo
+        const [ing] = await connection.query("SELECT nombre, cantidad_por_unidad, costo_unitario FROM ingredientes WHERE id_ingrediente = ?", [id]);
+        const cantTotal = parseFloat(envases) * parseFloat(ing[0].cantidad_por_unidad);
+        const montoGasto = cantTotal * parseFloat(ing[0].costo_unitario);
+
+        // 2. Insertar el Lote
+        await connection.query(
+            `INSERT INTO lotes_ingredientes (id_ingrediente, id_restaurante, cantidad_inicial, cantidad_actual, fecha_caducidad, estado)
+             VALUES (?, ?, ?, ?, ?, 'disponible')`,
+            [id, id_rest, cantTotal, cantTotal, fecha_caducidad]
+        );
+
+        // 3. Registrar el gasto en Finanzas
+        await connection.query(
+            `INSERT INTO movimientos_financieros (id_restaurante, tipo, categoria, monto, descripcion)
+             VALUES (?, 'egreso', 'insumos', ?, ?)`,
+            [id_rest, montoGasto, `Compra Stock: ${ing[0].nombre} (${envases} envases)`]
+        );
+
+        // 4. Actualizar el stock total en la tabla ingredientes (Caché)
+        await connection.query(
+            `UPDATE ingredientes i SET stock = (SELECT SUM(cantidad_actual) FROM lotes_ingredientes WHERE id_ingrediente = i.id_ingrediente AND estado = 'disponible')
+             WHERE id_ingrediente = ?`, [id]
+        );
+
+        await connection.commit();
+        res.status(201).json({ message: 'Lote registrado.' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ message: 'Error al guardar el lote.' });
+    } finally { connection.release(); }
+});
 
 app.get('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
     try {
@@ -422,132 +488,60 @@ app.get('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
 
 app.post('/api/ingredientes', requireAuth, requireOwner, async (req, res) => {
     try {
-        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, piezas_compradas } = req.body;
+        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, dias_caducidad_estimado } = req.body;
         const id_restaurante = req.session.restauranteId;
         
         const costo_unitario_calculado = parseFloat(costo_compra) / parseFloat(cantidad_por_unidad);
-        const stock_total = parseFloat(piezas_compradas) * parseFloat(cantidad_por_unidad);
 
         const [existente] = await pool.query(
-            `SELECT id_ingrediente, estado FROM ingredientes 
-             WHERE nombre = ? AND id_restaurante = ?`,
+            "SELECT id_ingrediente, estado FROM ingredientes WHERE nombre = ? AND id_restaurante = ?",
             [nombre.trim(), id_restaurante] 
         );
 
         if (existente.length > 0) {
             const ingrediente = existente[0];
-
-            if (ingrediente.estado === 'activo') {
-                return res.status(409).json({ message: 'Ya existe un ingrediente con este nombre.' });
-            }
+            if (ingrediente.estado === 'activo') return res.status(409).json({ message: 'Ya existe un ingrediente con este nombre.' });
 
             await pool.query(
                 `UPDATE ingredientes 
-                 SET unidad_medida = ?, 
-                     costo_unitario = ?, 
-                     stock = ?, 
-                     cantidad_por_unidad = ?,
-                     estado = 'activo'  -- ¡Aquí ocurre la magia!
+                 SET unidad_medida = ?, costo_unitario = ?, cantidad_por_unidad = ?, dias_caducidad_estimado = ?, estado = 'activo'
                  WHERE id_ingrediente = ?`,
-                [unidad_medida, costo_unitario_calculado, stock_total, cantidad_por_unidad, ingrediente.id_ingrediente]
+                [unidad_medida, costo_unitario_calculado, cantidad_por_unidad, dias_caducidad_estimado, ingrediente.id_ingrediente]
             );
-
-            return res.status(200).json({ message: 'Ingrediente restaurado y actualizado exitosamente.' });
-
+            return res.status(200).json({ message: 'Ingrediente restaurado.' });
         } else {
             await pool.query(
-                `INSERT INTO ingredientes (id_restaurante, nombre, unidad_medida, costo_unitario, stock, cantidad_por_unidad, estado) 
-                 VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
-                [id_restaurante, nombre.trim(), unidad_medida, costo_unitario_calculado, stock_total, cantidad_por_unidad]
+                `INSERT INTO ingredientes (id_restaurante, nombre, unidad_medida, costo_unitario, stock, cantidad_por_unidad, dias_caducidad_estimado, estado) 
+                 VALUES (?, ?, ?, ?, 0, ?, ?, 'activo')`,
+                [id_restaurante, nombre.trim(), unidad_medida, costo_unitario_calculado, cantidad_por_unidad, dias_caducidad_estimado]
             );
-            return res.status(201).json({ message: 'Ingrediente creado exitosamente.' });
+            return res.status(201).json({ message: 'Ingrediente creado con stock 0.' });
         }
-
     } catch(error) {
-        console.error('Error al crear/restaurar ingrediente:', error);
+        console.error(error);
         res.status(500).json({message: 'Error al procesar el ingrediente.'});
     }
 });
 
 app.put('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) => {
-    const connection = await pool.getConnection();
     try {
-        
         const { id } = req.params;
-        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, piezas_compradas, cantidad_disponible } = req.body;
-        const stockInput = parseFloat(piezas_compradas);
-        const costoInput = parseFloat(costo_compra);
-
-        if (stockInput < 0) return res.status(400).json({ message: 'No puedes tener stock negativo.' });
-        if (stockInput > 10000) return res.status(400).json({ message: 'Stock excesivo (Máx 10,000 unidades).' });
-        
-        if (costoInput < 0) return res.status(400).json({ message: 'El costo no puede ser negativo.' });
-        if (costoInput > 100000) return res.status(400).json({ message: 'Costo unitario excesivo (Máx $100,000).' });
+        const { nombre, unidad_medida, costo_compra, cantidad_por_unidad, dias_caducidad_estimado } = req.body;
         const id_restaurante = req.session.restauranteId;
 
-        await connection.beginTransaction();
+        const costo_unitario_calculado = parseFloat(costo_compra) / parseFloat(cantidad_por_unidad);
 
-        // 1. Obtener datos anteriores para comparar stock
-        const [previo] = await connection.query(
-            "SELECT stock, costo_unitario FROM ingredientes WHERE id_ingrediente = ?", 
-            [id]
-        );
-        
-        let nuevoStock = 0;
-        let costoUnitarioCalculado = 0;
-
-        // Lógica de cálculo blindada contra NaNs
-        const cantPorUnidad = parseFloat(cantidad_por_unidad) || 1;
-        const costoCompra = parseFloat(costo_compra) || 0;
-
-        if (costoCompra > 0 && cantPorUnidad > 0) {
-            costoUnitarioCalculado = costoCompra / cantPorUnidad;
-        } else if (previo.length > 0) {
-            costoUnitarioCalculado = previo[0].costo_unitario; 
-        }
-
-        if (piezas_compradas !== undefined && piezas_compradas !== "") {
-
-            nuevoStock = parseFloat(piezas_compradas) * cantPorUnidad;
-        } else {
-
-            nuevoStock = parseFloat(cantidad_disponible);
-        }
-
-        if (previo.length > 0) {
-            const stockAnterior = parseFloat(previo[0].stock);
-            const diferencia = nuevoStock - stockAnterior;
-            
-            if (diferencia > 0 && costoUnitarioCalculado > 0) {
-                const montoGasto = diferencia * costoUnitarioCalculado;
-                
-                await connection.query(
-                    `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
-                     VALUES (?, 'egreso', ?, ?, NOW())`,
-                    [id_restaurante, montoGasto, `Compra Stock: ${nombre} (+${(diferencia/cantPorUnidad).toFixed(1)} pzas)`]
-                );
-            }
-        }
-        await connection.query(
+        await pool.query(
             `UPDATE ingredientes 
-             SET nombre = ?, 
-                 unidad_medida = ?, 
-                 costo_unitario = ?, 
-                 stock = ?, 
-                 cantidad_por_unidad = ?
+             SET nombre = ?, unidad_medida = ?, costo_unitario = ?, cantidad_por_unidad = ?, dias_caducidad_estimado = ?
              WHERE id_ingrediente = ? AND id_restaurante = ?`,
-            [nombre, unidad_medida, costoUnitarioCalculado, nuevoStock, cantPorUnidad, id, id_restaurante]
+            [nombre.trim(), unidad_medida, costo_unitario_calculado, cantidad_por_unidad, dias_caducidad_estimado, id, id_restaurante]
         );
 
-        await connection.commit();
-        res.json({ message: 'Ingrediente actualizado y gasto registrado (si aplicó).' });
-
+        res.json({ message: 'Configuración del ingrediente actualizada.' });
     } catch(error) {
-        await connection.rollback();
-        console.error('Error al actualizar ingrediente:', error);
-        res.status(500).json({message: 'Error al actualizar: ' + error.message});
-    } finally {
-        connection.release();
+        console.error(error);
+        res.status(500).json({message: 'Error al actualizar.'});
     }
 });
 
@@ -678,7 +672,6 @@ app.get('/api/pedidos/activos', requireAuth, async (req, res) => {
         res.status(500).json({message: 'Error al cargar los pedidos.'});
     }
 });
-
 app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
     const { id } = req.params;
     const { nuevoEstado } = req.body;
@@ -687,38 +680,26 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
     if (!['en proceso', 'completado', 'cancelado', 'inactivo', 'por_pagar'].includes(nuevoEstado)) {
         return res.status(400).json({ message: 'Estado no válido.' });
     }
-    // Iniciar transacción
+
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
-        // --- LÓGICA DE VALIDACIÓN Y DESCUENTO DE INVENTARIO ---
-        // Solo aplica si el intento es cambiar a 'completado'
         if (nuevoEstado === 'completado') {
-            
-            // 1. Verificamos el estado ACTUAL para evitar dobles descuentos
             const [pedidoActual] = await connection.query(
                 "SELECT estado FROM pedidos WHERE id_pedido = ? AND id_restaurante = ?",
                 [id, id_restaurante]
             );
 
-            if (pedidoActual.length === 0) {
-                throw new Error('Pedido no encontrado.');
-            }
+            if (pedidoActual.length === 0) throw new Error('Pedido no encontrado.');
             if (pedidoActual[0].estado === 'completado') {
-                await connection.commit(); // No hacemos nada, ya estaba completado
+                await connection.commit();
                 connection.release();
                 return res.json({ message: 'Este pedido ya estaba completado.' });
             }
 
-            // 2. [NUEVO] OBTENER REQUERIMIENTOS VS. STOCK ACTUAL
-            // Obtenemos una lista de lo que el pedido necesita y lo que hay.
             const [ingredientesRequeridos] = await connection.query(
-                `SELECT 
-                    i.id_ingrediente, 
-                    i.nombre, 
-                    i.stock AS stock_actual, 
-                    SUM(r.cantidad_usada * pd.cantidad) AS stock_requerido
+                `SELECT i.id_ingrediente, i.nombre, i.stock AS stock_actual, SUM(r.cantidad_usada * pd.cantidad) AS stock_requerido
                  FROM pedido_detalles pd
                  JOIN recetas r ON pd.id_producto = r.id_producto
                  JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
@@ -727,47 +708,80 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
                 [id, id_restaurante]
             );
 
-            // 3. [NUEVO] VALIDAR SI HAY STOCK SUFICIENTE
             const ingredientesFaltantes = [];
             for (const ing of ingredientesRequeridos) {
                 if (parseFloat(ing.stock_actual) < parseFloat(ing.stock_requerido)) {
-                    ingredientesFaltantes.push(
-                        `${ing.nombre} (requiere ${ing.stock_requerido}, tiene ${ing.stock_actual})`
-                    );
+                    ingredientesFaltantes.push(`${ing.nombre} (requiere ${ing.stock_requerido}, tiene ${ing.stock_actual})`);
                 }
             }
 
-            // 4. [NUEVO] SI FALTA ALGO, RECHAZAR LA TRANSACCIÓN
             if (ingredientesFaltantes.length > 0) {
-                await connection.rollback(); // Deshacemos todo
+                await connection.rollback();
                 connection.release();
-                // 409 Conflict es un buen código HTTP para "no se puede hacer por un conflicto de estado"
                 return res.status(409).json({
                     message: `No se puede completar el pedido. Stock insuficiente para: ${ingredientesFaltantes.join(', ')}`
                 });
             }
 
-            // 5. SI LLEGAMOS AQUÍ, HAY STOCK. Procedemos a descontar.
-            // (Podemos re-usar el bucle anterior, o ejecutar la consulta JOIN)
-            await connection.query(
-                `UPDATE ingredientes i
-                 JOIN recetas r ON i.id_ingrediente = r.id_ingrediente
-                 JOIN pedido_detalles pd ON r.id_producto = pd.id_producto
-                 SET i.stock = i.stock - (r.cantidad_usada * pd.cantidad)
-                 WHERE pd.id_pedido = ? AND i.id_restaurante = ?`,
-                [id, id_restaurante]
-            );
-        }
-        
-        // --- FIN DE LÓGICA DE DESCUENTO ---
+            // --- INICIO ALGORITMO FIFO ---
+            for (const reqIng of ingredientesRequeridos) {
+                let cantidadPendiente = parseFloat(reqIng.stock_requerido);
 
-        // 6. Actualizamos el estado del pedido
-        await connection.query(
-            "UPDATE pedidos SET estado = ? WHERE id_pedido = ? AND id_restaurante = ?",
-            [nuevoEstado, id, id_restaurante]
-        );
+                const [lotes] = await connection.query(
+                    `SELECT id_lote, cantidad_actual 
+                     FROM lotes_ingredientes 
+                     WHERE id_ingrediente = ? AND estado = 'disponible' 
+                     ORDER BY fecha_caducidad ASC`,
+                    [reqIng.id_ingrediente]
+                );
+
+                for (const lote of lotes) {
+                    if (cantidadPendiente <= 0) break;
+
+                    let cantidadLote = parseFloat(lote.cantidad_actual);
+
+                    if (cantidadLote <= cantidadPendiente) {
+                        await connection.query(
+                            "UPDATE lotes_ingredientes SET cantidad_actual = 0, estado = 'agotado' WHERE id_lote = ?",
+                            [lote.id_lote]
+                        );
+                        cantidadPendiente -= cantidadLote;
+                    } else {
+                        await connection.query(
+                            "UPDATE lotes_ingredientes SET cantidad_actual = cantidad_actual - ? WHERE id_lote = ?",
+                            [cantidadPendiente, lote.id_lote]
+                        );
+                        cantidadPendiente = 0;
+                    }
+                }
+
+                await connection.query(
+                    `UPDATE ingredientes 
+                     SET stock = (SELECT COALESCE(SUM(cantidad_actual), 0) FROM lotes_ingredientes WHERE id_ingrediente = ? AND estado = 'disponible')
+                     WHERE id_ingrediente = ?`,
+                    [reqIng.id_ingrediente, reqIng.id_ingrediente]
+                );
+            }
+            // --- FIN ALGORITMO FIFO ---
+        }
+
+        let queryUpdate = "UPDATE pedidos SET estado = ?";
+        const paramsUpdate = [nuevoEstado];
+
+        if (nuevoEstado === 'en proceso') {
+            queryUpdate += ", fecha_en_proceso = NOW()";
+        } else if (nuevoEstado === 'completado') {
+            queryUpdate += ", fecha_completado = NOW()";
+        } else if (nuevoEstado === 'inactivo' || nuevoEstado === 'por_pagar') {
+            queryUpdate += ", fecha_pago = NOW()";
+        }
+
+        queryUpdate += " WHERE id_pedido = ? AND id_restaurante = ?";
+        paramsUpdate.push(id, id_restaurante);
+
+        await connection.query(queryUpdate, paramsUpdate);
+
         if (nuevoEstado === 'inactivo') {
-            // 1. Obtener el monto del pedido
             const [ped] = await connection.query(
                 "SELECT total_calculado, mesa FROM pedidos WHERE id_pedido = ?", 
                 [id]
@@ -777,7 +791,6 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
                 const monto = ped[0].total_calculado;
                 const descripcion = `Ingreso Pedido #${id} (${ped[0].mesa})`;
                 
-                // 2. Insertar en movimientos_financieros
                 await connection.query(
                     `INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion, fecha)
                      VALUES (?, 'ingreso', ?, ?, NOW())`,
@@ -785,17 +798,14 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
                 );
             }
         }
-        // 7. Si todo salió bien, confirmamos la transacción
+
         await connection.commit();
-        res.json({ message: `Pedido ${id} actualizado a ${nuevoEstado}. Stock validado y descontado.` });
+        res.json({ message: `Pedido ${id} actualizado a ${nuevoEstado}. Stock FIFO descontado.` });
 
     } catch (error) {
-        // Si algo falló, revertimos todo
         await connection.rollback();
-        console.error('Error en la transacción del pedido:', error);
         res.status(500).json({ message: `Error al actualizar el pedido: ${error.message}` });
     } finally {
-        // Siempre liberamos la conexión
         connection.release();
     }
 });
@@ -1400,6 +1410,121 @@ app.get('/api/finanzas/detalle/:fecha', requireAuth, requireOwner, async (req, r
     }
 });
 
+app.get('/api/finanzas/dashboard', requireAuth, requireOwner, async (req, res) => {
+    const connection = await pool.getConnection();
+    const id_rest = req.session.restauranteId;
+
+    try {
+        // 1. KPIs de HOY
+        const [statsHoy] = await connection.query(`
+            SELECT 
+                SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END) as ingresos,
+                SUM(CASE WHEN tipo = 'egreso' THEN monto ELSE 0 END) as egresos
+            FROM movimientos_financieros 
+            WHERE id_restaurante = ? AND DATE(fecha) = CURDATE()
+        `, [id_rest]);
+
+        const [ordenesHoy] = await connection.query(`
+            SELECT COUNT(*) as total
+            FROM pedidos
+            WHERE id_restaurante = ? AND DATE(fecha_pago) = CURDATE() AND estado = 'inactivo'
+        `, [id_rest]);
+
+        // 2. KPIs de AYER (Para calcular la tendencia %)
+        const [statsAyer] = await connection.query(`
+            SELECT 
+                SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END) as ingresos,
+                SUM(CASE WHEN tipo = 'egreso' THEN monto ELSE 0 END) as egresos
+            FROM movimientos_financieros 
+            WHERE id_restaurante = ? AND DATE(fecha) = CURDATE() - INTERVAL 1 DAY
+        `, [id_rest]);
+
+        // 3. TENDENCIA DE LOS ÚLTIMOS 7 DÍAS (Para la gráfica principal)
+        const [tendencia7Dias] = await connection.query(`
+            SELECT 
+                DATE_FORMAT(fecha, '%Y-%m-%d') as dia,
+                SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END) as ingresos,
+                SUM(CASE WHEN tipo = 'egreso' THEN monto ELSE 0 END) as egresos
+            FROM movimientos_financieros 
+            WHERE id_restaurante = ? AND fecha >= DATE(NOW() - INTERVAL 6 DAY)
+            GROUP BY dia
+            ORDER BY dia ASC
+        `, [id_rest]);
+
+        // 4. EFICIENCIA OPERATIVA (Promedios de tiempo de HOY en minutos)
+        const [eficiencia] = await connection.query(`
+            SELECT 
+                AVG(TIMESTAMPDIFF(MINUTE, fecha_en_proceso, fecha_completado)) as prom_cocina,
+                AVG(TIMESTAMPDIFF(MINUTE, fecha_creacion, fecha_pago)) as prom_mesa
+            FROM pedidos
+            WHERE id_restaurante = ? AND DATE(fecha_creacion) = CURDATE()
+        `, [id_rest]);
+
+        // 5. PLATILLO MÁS RÁPIDO Y MÁS LENTO DE HOY
+        // Buscamos la diferencia de tiempo mínima y máxima
+        const [velocidadPlatillos] = await connection.query(`
+            SELECT 
+                p.nombre, 
+                TIMESTAMPDIFF(MINUTE, ped.fecha_en_proceso, ped.fecha_completado) as tiempo
+            FROM pedidos ped
+            JOIN pedido_detalles pd ON ped.id_pedido = pd.id_pedido
+            JOIN productos p ON pd.id_producto = p.id_producto
+            WHERE ped.id_restaurante = ? 
+              AND DATE(ped.fecha_creacion) = CURDATE() 
+              AND ped.fecha_completado IS NOT NULL
+              AND ped.fecha_en_proceso IS NOT NULL
+            ORDER BY tiempo ASC
+        `, [id_rest]);
+
+        let rapido = { nombre: 'Sin datos', tiempo: 0 };
+        let lento = { nombre: 'Sin datos', tiempo: 0 };
+        
+        if (velocidadPlatillos.length > 0) {
+            rapido = velocidadPlatillos[0]; // El primero es el menor (ASC)
+            lento = velocidadPlatillos[velocidadPlatillos.length - 1]; // El último es el mayor
+        }
+
+        // 6. RIESGO DE CADUCIDAD (Lotes que vencen en los próximos 7 días)
+        // Aunque la tabla esté vacía ahora, esto ya deja preparado el terreno para la Fase 3
+        const [riesgoCaducidad] = await connection.query(`
+            SELECT COUNT(*) as total_lotes
+            FROM lotes_ingredientes
+            WHERE id_restaurante = ? 
+              AND estado = 'disponible' 
+              AND fecha_caducidad <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+        `, [id_rest]);
+
+        // 7. EMPAQUETAR Y ENVIAR
+        res.json({
+            kpis: {
+                hoy: {
+                    ingresos: parseFloat(statsHoy[0].ingresos) || 0,
+                    egresos: parseFloat(statsHoy[0].egresos) || 0,
+                    ordenes: ordenesHoy[0].total || 0
+                },
+                ayer: {
+                    ingresos: parseFloat(statsAyer[0].ingresos) || 0,
+                    egresos: parseFloat(statsAyer[0].egresos) || 0
+                }
+            },
+            grafica7Dias: tendencia7Dias,
+            operativa: {
+                promedioCocinaMin: Math.round(parseFloat(eficiencia[0].prom_cocina) || 0),
+                promedioMesaMin: Math.round(parseFloat(eficiencia[0].prom_mesa) || 0),
+                platilloRapido: rapido,
+                platilloLento: lento,
+                lotesEnRiesgo: riesgoCaducidad[0].total_lotes || 0
+            }
+        });
+
+    } catch (error) {
+        console.error("Error cargando el Dashboard:", error);
+        res.status(500).json({ message: 'Error interno al calcular estadísticas.' });
+    } finally {
+        connection.release();
+    }
+});
+
 app.post('/api/finanzas/egreso', requireAuth, requireOwner, async (req, res) => {
     try {
         const { descripcion, monto } = req.body;
@@ -1757,6 +1882,48 @@ app.get('/api/movil/verificar-sesion/:pin', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ valida: false });
+    }
+});
+
+// ============================================================================
+// CRON DE LA MUERTE: Limpieza de Inventario (Se ejecuta a las 00:01 AM diario)
+// ============================================================================
+cron.schedule('1 0 * * *', async () => {
+    console.log('[CRON] Iniciando revisión nocturna de caducidad de lotes...');
+    
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+        // 1. Ejecución: Buscar lotes vencidos que sigan marcados como disponibles y "matarlos"
+        const [result] = await connection.query(`
+            UPDATE lotes_ingredientes 
+            SET estado = 'caducado' 
+            WHERE estado = 'disponible' AND fecha_caducidad < CURDATE()
+        `);
+
+        if (result.affectedRows > 0) {
+            // 2. Sincronización: Si hubo muertes, recalculamos el stock virtual de todos los ingredientes
+            await connection.query(`
+                UPDATE ingredientes i
+                SET stock = COALESCE((
+                    SELECT SUM(cantidad_actual) 
+                    FROM lotes_ingredientes 
+                    WHERE id_ingrediente = i.id_ingrediente AND estado = 'disponible'
+                ), 0)
+            `);
+            
+            console.log(`[CRON] Limpieza exitosa: ${result.affectedRows} lote(s) caducado(s). Stock general actualizado.`);
+        } else {
+            console.log('[CRON] Todo en orden. No se encontraron lotes caducados hoy.');
+        }
+
+        await connection.commit();
+    } catch (error) {
+        await connection.rollback();
+        console.error('[CRON] Error crítico al procesar caducidades:', error);
+    } finally {
+        connection.release();
     }
 });
 
