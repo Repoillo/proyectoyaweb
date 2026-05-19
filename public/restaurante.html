@@ -24,6 +24,7 @@
                     <li><a href="#" data-target="panelEmpleados" data-seccion="empleados"><ion-icon name="people-outline"></ion-icon> Empleados</a></li>
                     <li><a href="#" data-target="panelFinanzas" data-seccion="finanzas"><ion-icon name="cash-outline"></ion-icon> Finanzas</a></li>
                     <li><a href="#" data-target="panelPedidosCompletados" data-seccion="pedidos_completados"><ion-icon name="checkmark-done-outline"></ion-icon> Historial</a></li>
+                    <li><a href="#" data-target="panelIA" data-seccion="ia"><ion-icon name="sparkles-outline"></ion-icon> Asistente IA</a></li>
                 </ul>
             </nav>
             <button class="boton botonSalir">Cerrar sesión</button>
@@ -297,7 +298,27 @@
             <h3 style="border-bottom:1px solid #eee; margin-top:15px;">Ingredientes Descontados</h3>
             <ul id="detalleIngredientesLista" class="lista-detalle"></ul>
         </div>
-    </div>        
+    </div>
+    <div id="panelIA" class="panelContenido oculto" data-seccion="ia" style="flex-direction: column; height: 100%;">
+    
+    <div id="chatBox" class="chat-box">
+        <div class="bienvenida-ia" id="bienvenidaIA">
+            <ion-icon name="sparkles"></ion-icon>
+            <h2>¿Por dónde empezamos?</h2>
+            <p>Pregúntame sobre ventas, operaciones o inventario.</p>
+        </div>
+        </div>
+
+    <div class="chat-input-container">
+        <form id="formChatIA" class="chat-form">
+            <ion-icon name="sparkles-outline" class="chat-icon-left"></ion-icon>
+            <input type="text" id="inputChatIA" placeholder="Pregunta a la IA sobre tu restaurante..." autocomplete="off" required>
+            <button type="submit" id="btnEnviarIA" class="chat-btn-send">
+                <ion-icon name="send"></ion-icon>
+            </button>
+        </form>
+    </div>
+</div>        
     <script src="restaurante.js"></script>
     <canvas id="qrCanvas" style="display:none;"></canvas>
 

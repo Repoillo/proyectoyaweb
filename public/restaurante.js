@@ -1197,6 +1197,95 @@ document.addEventListener('DOMContentLoaded', () => {
         cargarPedidosCompletados();
     });
 
+    // ==========================================
+    // 10. LÓGICA DEL ASISTENTE IA
+    // ==========================================
+    const formChatIA = getEl('formChatIA');
+    const inputChatIA = getEl('inputChatIA');
+    const chatBox = getEl('chatBox');
+    const bienvenidaIA = getEl('bienvenidaIA');
+    const btnEnviarIA = getEl('btnEnviarIA');
+
+    if (formChatIA) {
+        formChatIA.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const mensaje = inputChatIA.value.trim();
+            if (!mensaje) return;
+
+            // 1. Eliminar bienvenida del DOM si es el primer mensaje
+            if (bienvenidaIA) {
+                bienvenidaIA.remove();
+            }
+
+            // 2. Renderizar mensaje del usuario
+            agregarBurbujaChat(mensaje, 'usuario');
+            inputChatIA.value = '';
+            
+            // 3. Bloquear input y mostrar que la IA está "pensando"
+            inputChatIA.disabled = true;
+            btnEnviarIA.disabled = true;
+            const idPensando = agregarBurbujaChat("Pensando...", 'ia', true);
+
+            try {
+                // 4. Enviar a tu ruta backend existente
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ mensaje })
+                });
+
+                const data = await res.json();
+                
+                // 5. Quitar mensaje de "Pensando" y poner la respuesta real
+                const burbujaPensando = getEl(idPensando);
+                if (burbujaPensando) burbujaPensando.remove();
+
+                if (res.ok) {
+                    agregarBurbujaChat(data.respuesta, 'ia');
+                } else {
+                    agregarBurbujaChat("Error: " + (data.error || "No me pude conectar."), 'ia');
+                }
+
+            } catch (error) {
+                console.error("Error en Chat IA:", error);
+                const burbujaPensando = getEl(idPensando);
+                if (burbujaPensando) burbujaPensando.remove();
+                agregarBurbujaChat("Error de conexión con el servidor.", 'ia');
+            } finally {
+                // 6. Desbloquear input
+                inputChatIA.disabled = false;
+                btnEnviarIA.disabled = false;
+                inputChatIA.focus();
+            }
+        });
+    }
+
+    function agregarBurbujaChat(texto, emisor, esTemporal = false) {
+        const div = document.createElement('div');
+        div.classList.add('mensaje-chat');
+        div.classList.add(emisor === 'usuario' ? 'mensaje-usuario' : 'mensaje-ia');
+        
+        // Blindaje HTML para la respuesta
+        div.innerHTML = escapeHTML(texto);
+        
+        // Si es el mensaje temporal de "pensando", le damos un ID para borrarlo luego
+        if (esTemporal) {
+            const tempId = 'temp-' + Date.now();
+            div.id = tempId;
+            // Un poco de estilo sutil para el estado de espera
+            div.style.opacity = '0.6';
+            div.style.fontStyle = 'italic';
+        }
+
+        chatBox.appendChild(div);
+        
+        // Auto-scroll hacia el final
+        chatBox.scrollTop = chatBox.scrollHeight;
+        
+        return div.id;
+    }
+
     if(btnExportarQR) btnExportarQR.addEventListener('click', () => {
         const canvas = getEl('qrCanvas');
         if(!canvas) return alert("Falta canvas QR en HTML");
