@@ -7,6 +7,8 @@ const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
 const cron = require('node-cron');
 const app = express();
+const { GoogleGenAI } = require('@google/genai');
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 app.use(cors({
     origin: 'http://localhost:10000',
@@ -1924,6 +1926,38 @@ cron.schedule('1 0 * * *', async () => {
         console.error('[CRON] Error crítico al procesar caducidades:', error);
     } finally {
         connection.release();
+    }
+});
+
+app.post('/api/chat', requireAuth, requireOwner, async (req, res) => {
+    const { mensaje } = req.body;
+
+    if (!mensaje) {
+        return res.status(400).json({ error: 'Debes enviar un mensaje.' });
+    }
+
+    try {
+        // Configuramos el comportamiento base de la IA
+        const systemInstruction = `Eres un asistente virtual experto en gestión de restaurantes para el sistema "Proyecto YA!".
+Tu respuestas deben ser concisas, amables y profesionales.
+Por ahora, solo responde preguntas generales.`;
+
+        // Llamamos a la API de Gemini usando el modelo más rápido y eficiente (Flash)
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: mensaje,
+            config: {
+                systemInstruction: systemInstruction,
+                temperature: 0.2 // Baja temperatura para que sea analítico y no invente cosas
+            }
+        });
+
+        // Extraemos el texto de la respuesta y se lo mandamos al frontend
+        res.json({ respuesta: response.text });
+
+    } catch (error) {
+        console.error('[CHATBOT ERROR]:', error);
+        res.status(500).json({ error: 'Hubo un error de conexión con el asistente.' });
     }
 });
 
