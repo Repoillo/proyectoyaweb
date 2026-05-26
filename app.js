@@ -773,7 +773,7 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
         if (nuevoEstado === 'en proceso') {
             queryUpdate += ", fecha_en_proceso = NOW()";
         } else if (nuevoEstado === 'completado') {
-            queryUpdate += ", fecha_completado = NOW()";
+            queryUpdate += ", fecha_completado = NOW(), fecha_en_proceso = COALESCE(fecha_en_proceso, fecha_creacion)";
         } else if (nuevoEstado === 'inactivo' || nuevoEstado === 'por_pagar') {
             queryUpdate += ", fecha_pago = NOW()";
         }
@@ -1141,9 +1141,9 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
                 // Esto asegura que la mesa quede 100% limpia para el siguiente cliente
                 await connection.query(
                     `UPDATE pedidos 
-                     SET estado = 'inactivo' 
-                     WHERE mesa = ? AND id_restaurante = ? 
-                     AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+                    SET estado = 'inactivo', fecha_pago = NOW()
+                    WHERE mesa = ? AND id_restaurante = ? 
+                    AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
                     [nombreMesa, id_restaurante]
                 );
             }
@@ -1958,6 +1958,40 @@ Por ahora, solo responde preguntas generales.`;
     } catch (error) {
         console.error('[CHATBOT ERROR]:', error);
         res.status(500).json({ error: 'Hubo un error de conexión con el asistente.' });
+    }
+});
+
+// ==========================================
+// RUTA: TOP 5 INGREDIENTES (ÚLTIMOS 7 DÍAS)
+// ==========================================
+app.get('/api/finanzas/consumo-ingredientes', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const id_rest = req.session.restauranteId;
+
+        // Consulta SQL que cruza Pedidos -> Detalles -> Recetas -> Ingredientes
+        // Solo toma pedidos cerrados o completados de los últimos 7 días.
+        const [topIngredientes] = await pool.query(`
+            SELECT 
+                i.nombre, 
+                i.unidad_medida, 
+                SUM(pd.cantidad * r.cantidad_usada) as total_consumido
+            FROM pedidos p
+            JOIN pedido_detalles pd ON p.id_pedido = pd.id_pedido
+            JOIN recetas r ON pd.id_producto = r.id_producto
+            JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+            WHERE p.id_restaurante = ? 
+              AND p.estado IN ('completado', 'inactivo', 'archivado')
+              AND p.fecha_creacion >= DATE(NOW() - INTERVAL 7 DAY)
+            GROUP BY i.id_ingrediente, i.nombre, i.unidad_medida
+            ORDER BY total_consumido DESC
+            LIMIT 5
+        `, [id_rest]);
+
+        res.json(topIngredientes);
+
+    } catch (error) {
+        console.error("Error al calcular consumo de ingredientes:", error);
+        res.status(500).json({ message: 'Error interno al procesar el consumo.' });
     }
 });
 

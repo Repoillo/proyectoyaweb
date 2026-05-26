@@ -590,6 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 4. Llenar Historial Inferior y Comparador (Tu código original intacto)
             renderizarFinanzas(dias);
             llenarSelectoresComparacion(dias);
+            cargarTopIngredientes();
 
         } catch (error) {
             console.error('Error:', error);
@@ -719,6 +720,70 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 options: { cutout: '80%', responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false } } }
             });
+        }
+    }
+    let chartIngredientesInstancia = null;
+
+    async function cargarTopIngredientes() {
+        const lista = getEl('listaTopIngredientes');
+        if(!lista) return;
+
+        try {
+            const res = await fetch('/api/finanzas/consumo-ingredientes', { credentials: 'include' });
+            const datos = await res.json();
+
+            lista.innerHTML = '';
+
+            if(datos.length === 0) {
+                lista.innerHTML = '<li style="color: #7f8c8d;">No hay consumo registrado en los últimos 7 días.</li>';
+                return;
+            }
+
+            // 1. Llenar la lista de texto
+            datos.forEach((ing, index) => {
+                const li = document.createElement('li');
+                li.style.marginBottom = '12px';
+                li.style.fontSize = '1.05em';
+                li.innerHTML = `<strong style="color: var(--primaryblue);">#${index + 1} ${escapeHTML(ing.nombre)}:</strong> ${parseFloat(ing.total_consumido).toFixed(2)} ${escapeHTML(ing.unidad_medida)}`;
+                lista.appendChild(li);
+            });
+
+            // 2. Dibujar la Gráfica de Barras Horizontales
+            const ctx = getEl('chartIngredientes');
+            if(ctx) {
+                if(chartIngredientesInstancia) chartIngredientesInstancia.destroy();
+
+                const labels = datos.map(d => d.nombre);
+                const valores = datos.map(d => parseFloat(d.total_consumido));
+
+                chartIngredientesInstancia = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Consumo',
+                            data: valores,
+                            backgroundColor: '#e67e22', /* Tu color naranja principal */
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y', /* Convierte la gráfica a horizontal, ideal para Top 5 */
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false } /* Oculta la leyenda superior para ahorrar espacio */
+                        },
+                        scales: {
+                            x: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+
+        } catch(e) {
+            console.error(e);
+            lista.innerHTML = '<li style="color: red;">Error al cargar datos de ingredientes.</li>';
         }
     }
 
