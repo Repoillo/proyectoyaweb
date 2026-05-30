@@ -187,6 +187,16 @@
 
                 <h3 style="color: #2c3e50; font-size: 1.1em; margin-top: 30px;">Historial de Cortes Diarios</h3>
                 <div id="listaFinanzasDias" class="contenedor-pedidos"></div>
+                <div id="modalDetalleFinanzas" class="detalle-pedido-contenedor oculto" style="margin-top:20px;">
+                <button class="boton botonCancelar" id="btnCerrarFinanzas">&larr; Volver</button>
+                <h2 id="tituloDetalleFinanzas"></h2>
+                <div style="display:flex; justify-content:space-around; margin:15px 0;">
+                    <span>Ingresos: <b id="detIngresos" style="color:#27ae60"></b></span>
+                    <span>Egresos: <b id="detEgresos" style="color:#e74c3c"></b></span>
+                    <span>Utilidad: <b id="detUtilidad"></b></span>
+                </div>
+                <ul id="listaMovimientosDia" class="lista-detalle"></ul>
+            </div>
             </div>
 
             <div id="tab-productos" class="tab-content">
@@ -300,17 +310,6 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
-
-            <div id="modalDetalleFinanzas" class="detalle-pedido-contenedor oculto" style="margin-top:20px;">
-                <button class="boton botonCancelar" id="btnCerrarFinanzas">&larr; Volver</button>
-                <h2 id="tituloDetalleFinanzas"></h2>
-                <div style="display:flex; justify-content:space-around; margin:15px 0;">
-                    <span>Ingresos: <b id="detIngresos" style="color:#27ae60"></b></span>
-                    <span>Egresos: <b id="detEgresos" style="color:#e74c3c"></b></span>
-                    <span>Utilidad: <b id="detUtilidad"></b></span>
-                </div>
-                <ul id="listaMovimientosDia" class="lista-detalle"></ul>
             </div>
 
             <div id="modalGastoExtra" class="modal oculto">
