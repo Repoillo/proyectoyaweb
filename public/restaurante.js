@@ -145,7 +145,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
-
+    // Lógica para Pestañas Internas de Finanzas
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Quitar clase activo de todos los botones y contenidos
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('activo'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('activo'));
+            
+            // Activar el clickeado
+            btn.classList.add('activo');
+            const targetId = btn.dataset.tab;
+            const targetContent = document.getElementById(targetId);
+            if(targetContent) targetContent.classList.add('activo');
+        });
+    });
     // ==========================================
     // 5. FUNCIÓN GENÉRICA PARA CARGAR DATOS (CRUD)
     // ==========================================
@@ -591,6 +604,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderizarFinanzas(dias);
             llenarSelectoresComparacion(dias);
             cargarTopIngredientes();
+            renderizarFinanzas(dias);
+            llenarSelectoresComparacion(dias);
+            cargarTablasCSV();
 
         } catch (error) {
             console.error('Error:', error);
@@ -784,6 +800,72 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) {
             console.error(e);
             lista.innerHTML = '<li style="color: red;">Error al cargar datos de ingredientes.</li>';
+        }
+    }
+    async function cargarTablasCSV() {
+        const listaProd = getEl('listaFrecuenciaProductos');
+        const listaIns = getEl('listaCompletaIngredientes');
+        const listaMeseros = getEl('listaRendimientoMeseros');
+
+        try {
+            // Hacemos las 3 peticiones al mismo tiempo para que cargue ultra rápido
+            const [resProd, resIns, resMeseros] = await Promise.all([
+                fetch('/api/finanzas/csv-productos', { credentials: 'include' }),
+                fetch('/api/finanzas/csv-insumos', { credentials: 'include' }),
+                fetch('/api/finanzas/csv-meseros', { credentials: 'include' })
+            ]);
+
+            const datosProd = await resProd.json();
+            const datosIns = await resIns.json();
+            const datosMeseros = await resMeseros.json();
+
+            // 1. Llenar Tabla de Productos
+            if (listaProd) {
+                listaProd.innerHTML = datosProd.length === 0 ? '<tr><td colspan="3" style="text-align:center;">Sin datos en los últimos 7 días</td></tr>' : '';
+                datosProd.forEach(p => {
+                    listaProd.innerHTML += `
+                        <tr>
+                            <td style="font-weight:bold; color:var(--primaryblue);">${escapeHTML(p.nombre)}</td>
+                            <td>${p.cantidad_vendida} unidades</td>
+                            <td style="color:#27ae60; font-weight:bold;">$${parseFloat(p.ingreso_generado).toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 2. Llenar Tabla de Insumos
+            if (listaIns) {
+                listaIns.innerHTML = datosIns.length === 0 ? '<tr><td colspan="3" style="text-align:center;">Sin datos en los últimos 7 días</td></tr>' : '';
+                datosIns.forEach(i => {
+                    listaIns.innerHTML += `
+                        <tr>
+                            <td style="font-weight:bold;">${escapeHTML(i.nombre)}</td>
+                            <td>${parseFloat(i.total_consumido).toFixed(2)}</td>
+                            <td style="color:#7f8c8d;">${escapeHTML(i.unidad_medida)}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 3. Llenar Tabla de Meseros
+            if (listaMeseros) {
+                listaMeseros.innerHTML = datosMeseros.length === 0 ? '<tr><td colspan="3" style="text-align:center;">Sin datos en los últimos 7 días</td></tr>' : '';
+                datosMeseros.forEach(m => {
+                    listaMeseros.innerHTML += `
+                        <tr>
+                            <td style="font-weight:bold; color:var(--primaryorange);">${escapeHTML(m.nombre_usuario)}</td>
+                            <td>${m.mesas_atendidas} mesas</td>
+                            <td style="color:#27ae60; font-weight:bold;">$${parseFloat(m.total_ingresado).toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+        } catch (error) {
+            console.error("Error cargando tablas CSV:", error);
+            if(listaProd) listaProd.innerHTML = '<tr><td colspan="3" style="color:red; text-align:center;">Error de conexión</td></tr>';
+            if(listaIns) listaIns.innerHTML = '<tr><td colspan="3" style="color:red; text-align:center;">Error de conexión</td></tr>';
+            if(listaMeseros) listaMeseros.innerHTML = '<tr><td colspan="3" style="color:red; text-align:center;">Error de conexión</td></tr>';
         }
     }
 
@@ -1270,6 +1352,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatBox = getEl('chatBox');
     const bienvenidaIA = getEl('bienvenidaIA');
     const btnEnviarIA = getEl('btnEnviarIA');
+    let historialIA = [];
 
     if (formChatIA) {
         formChatIA.addEventListener('submit', async (e) => {
@@ -1282,8 +1365,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 bienvenidaIA.remove();
             }
 
-            // 2. Renderizar mensaje del usuario
+            // 2. Renderizar mensaje del usuario Y GUARDARLO EN LA MEMORIA
             agregarBurbujaChat(mensaje, 'usuario');
+            historialIA.push({ role: "user", parts: [{ text: mensaje }] }); // <--- ¡FALTABA ESTO!
+            
             inputChatIA.value = '';
             
             // 3. Bloquear input y mostrar que la IA está "pensando"
@@ -1297,7 +1382,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
-                    body: JSON.stringify({ mensaje })
+                    body: JSON.stringify({ historial: historialIA })
                 });
 
                 const data = await res.json();
@@ -1308,6 +1393,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (res.ok) {
                     agregarBurbujaChat(data.respuesta, 'ia');
+                    historialIA.push({ role: "model", parts: [{ text: data.respuesta }] }); // <--- ¡Y FALTABA ESTO PARA QUE RECUERDE SUS RESPUESTAS!
+                    
+                    // Limpieza opcional para no gastar demasiados tokens
+                    if(historialIA.length > 10) historialIA = historialIA.slice(-10);
                 } else {
                     agregarBurbujaChat("Error: " + (data.error || "No me pude conectar."), 'ia');
                 }

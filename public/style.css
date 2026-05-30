@@ -1450,3 +1450,91 @@ input {
     from { opacity: 0; }
     to { opacity: 0.8; }
 }
+/* ==========================================
+   ESTILOS PARA PESTAÑAS (FINANZAS)
+   ========================================== */
+.tabs-finanzas {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 25px;
+    border-bottom: 2px solid var(--lightgray);
+    padding-bottom: 10px;
+    overflow-x: auto;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    padding: 10px 20px;
+    font-size: 0.95em;
+    font-weight: bold;
+    color: #7f8c8d;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.tab-btn:hover {
+    background: var(--lightgray);
+    color: var(--primaryblue);
+}
+
+.tab-btn.activo {
+    background: var(--primaryblue);
+    color: white;
+}
+
+.tab-content {
+    display: none;
+    animation: fadeInTab 0.3s ease-in-out;
+}
+
+.tab-content.activo {
+    display: block;
+}
+
+@keyframes fadeInTab {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================
+   ESTILOS PARA TABLAS TIPO CSV
+   ========================================== */
+.tabla-csv-contenedor {
+    max-height: 350px; /* Limita la altura y fuerza el scroll */
+    overflow-y: auto;
+    border: 1px solid #ecf0f1;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.02);
+}
+
+.tabla-csv-contenedor table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.tabla-csv-contenedor thead {
+    position: sticky;
+    top: 0;
+    background: #fdfdfd;
+    z-index: 1;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.tabla-csv-contenedor th, .tabla-csv-contenedor td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.95em;
+    color: var(--darkgraytext);
+}
+
+.tabla-csv-contenedor th {
+    font-weight: 700;
+    color: #34495e;
+    text-transform: uppercase;
+    font-size: 0.85em;
+}

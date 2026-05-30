@@ -1787,32 +1787,44 @@ app.get('/api/finanzas/dia', requireAuth, async (req, res) => {
     } catch (e) { console.error(e); res.status(500).json({message: 'Error al calcular día'}); }
 });
 
+// ==========================================
+// RUTA: TICKET COMPLETO (APP MÓVIL)
+// ==========================================
 app.get('/api/movil/ticket', async (req, res) => {
     let { numero_mesa } = req.query;
-    const id_restaurante = 1; // Hardcodeado por simplicidad de tu proyecto
+    const id_restaurante = 1; // Sigue fijo para el demo de la app móvil
 
-    // Normalizar nombre (ej. "1" -> "Mesa 1")
-    if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa')) {
+    // Normalizar nombre (ej. "1" -> "Mesa 1", respeta si envían "Barra 2")
+    if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa') && !numero_mesa.toString().toLowerCase().startsWith('barra')) {
         numero_mesa = `Mesa ${numero_mesa}`;
     }
 
     try {
-        // A. Buscar el pedido ACTIVO de esa mesa
+        // A. Datos del Restaurante (Fiscales y Contacto)
+        const [rest] = await pool.query(
+            "SELECT nombre_restaurante, direccion, telefono, rfc, porcentaje_iva FROM restaurante WHERE id_restaurante = ?", 
+            [id_restaurante]
+        );
+        
+        if (rest.length === 0) return res.status(404).json({ message: 'Restaurante no encontrado.' });
+        const restInfo = rest[0];
+
+        // B. Buscar el pedido ACTIVO y al Mesero asignado (JOIN con m_usuarios)
         const [pedidos] = await pool.query(
-            `SELECT id_pedido, fecha_creacion, total_calculado 
-             FROM pedidos 
-             WHERE mesa = ? AND id_restaurante = ? 
-             AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+            `SELECT p.id_pedido, p.fecha_creacion, p.total_calculado, u.nombre_usuario AS mesero 
+             FROM pedidos p
+             LEFT JOIN m_usuarios u ON p.id_mesero = u.id_usuario
+             WHERE p.mesa = ? AND p.id_restaurante = ? 
+             AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
             [numero_mesa, id_restaurante]
         );
 
         if (pedidos.length === 0) {
             return res.status(404).json({ message: 'No hay cuenta pendiente para esta mesa.' });
         }
-        
         const pedido = pedidos[0];
 
-        // B. Buscar los productos consumidos
+        // C. Buscar los productos consumidos
         const [detalles] = await pool.query(
             `SELECT p.nombre, pd.cantidad, pd.precio_en_pedido 
              FROM pedido_detalles pd
@@ -1821,21 +1833,40 @@ app.get('/api/movil/ticket', async (req, res) => {
             [pedido.id_pedido]
         );
 
-        // C. Obtener nombre del restaurante (Opcional, para el encabezado del ticket)
-        const [rest] = await pool.query("SELECT nombre_restaurante FROM restaurante WHERE id_restaurante = ?", [id_restaurante]);
+        // D. Matemáticas del Ticket (Desglose de Impuestos)
+        const ivaPorcentaje = parseFloat(restInfo.porcentaje_iva) || 16;
+        const total = parseFloat(pedido.total_calculado);
+        
+        // Extracción del Subtotal real (Despejando la fórmula: T = S * 1.16)
+        const subtotal = total / (1 + (ivaPorcentaje / 100));
+        const iva = total - subtotal;
 
-        // D. Armar respuesta JSON bonita para la App
+        // E. Armar el JSON estructurado para la App
         const ticketData = {
-            restaurante: rest[0].nombre_restaurante,
-            folio: `ORD-${pedido.id_pedido}`,
-            fecha: pedido.fecha_creacion,
+            empresa: {
+                nombre: restInfo.nombre_restaurante,
+                rfc: restInfo.rfc || 'XAXX010101000',
+                direccion: restInfo.direccion || 'Dirección no configurada',
+                telefono: restInfo.telefono || 'Sin teléfono'
+            },
+            ticket: {
+                folio: `ORD-${pedido.id_pedido}`,
+                fecha: pedido.fecha_creacion,
+                mesa: numero_mesa,
+                le_atendio: pedido.mesero || 'Asignación automática'
+            },
             items: detalles.map(d => ({
-                nombre: d.nombre,
                 cantidad: d.cantidad,
-                precio: d.precio_en_pedido,
-                subtotal: d.cantidad * d.precio_en_pedido
+                descripcion: d.nombre,
+                precio_unitario: parseFloat(d.precio_en_pedido).toFixed(2),
+                importe: (d.cantidad * d.precio_en_pedido).toFixed(2)
             })),
-            total: pedido.total_calculado
+            importes: {
+                subtotal: subtotal.toFixed(2),
+                tasa_iva: `${ivaPorcentaje}%`,
+                iva: iva.toFixed(2),
+                total_pagar: total.toFixed(2)
+            }
         };
 
         res.json(ticketData);
@@ -1929,35 +1960,202 @@ cron.schedule('1 0 * * *', async () => {
     }
 });
 
+// ==========================================
+// RUTA: CHATBOT IA (CON FUNCTION CALLING Y ESCRITURA)
+// ==========================================
 app.post('/api/chat', requireAuth, requireOwner, async (req, res) => {
-    const { mensaje } = req.body;
+    const { historial } = req.body;
+    const id_rest = req.session.restauranteId;
 
-    if (!mensaje) {
-        return res.status(400).json({ error: 'Debes enviar un mensaje.' });
+    if (!historial || !Array.isArray(historial) || historial.length === 0) {
+        return res.status(400).json({ error: 'Historial vacío o inválido.' });
     }
 
     try {
-        // Configuramos el comportamiento base de la IA
-        const systemInstruction = `Eres un asistente virtual experto en gestión de restaurantes para el sistema "Proyecto YA!".
-Tu respuestas deben ser concisas, amables y profesionales.
-Por ahora, solo responde preguntas generales.`;
+        const systemInstruction = `Eres un asistente operativo para "La Casa de Toño", parte del sistema Proyecto YA!. 
+Tu tono es profesional, analítico y directo.
+Tienes herramientas para consultar datos y registrar operaciones. Úsalas cuando el usuario te lo pida implícita o explícitamente.
+Nunca inventes datos. Si una herramienta devuelve un error (ej. ingrediente no encontrado), explícaselo al usuario para que sea más específico.`;
 
-        // Llamamos a la API de Gemini usando el modelo más rápido y eficiente (Flash)
-        const response = await ai.models.generateContent({
+        // 1. EL ARSENAL DE HERRAMIENTAS (Lectura y Escritura)
+        const tools = [{
+            functionDeclarations: [
+                {
+                    name: 'consultar_kpis_hoy',
+                    description: 'Obtiene los ingresos totales, gastos totales y utilidad neta del día de hoy.'
+                },
+                {
+                    name: 'consultar_estadisticas_semana',
+                    description: 'Obtiene un resumen de los platillos más vendidos y el consumo de insumos de los últimos 7 días.'
+                },
+                {
+                    name: 'registrar_gasto_extra',
+                    description: 'Registra un gasto o salida de dinero de la caja del restaurante.',
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            monto: { type: 'NUMBER', description: 'Monto del gasto en números' },
+                            descripcion: { type: 'STRING', description: 'Motivo o concepto del gasto' }
+                        },
+                        required: ['monto', 'descripcion']
+                    }
+                },
+                {
+                    name: 'agregar_mesas_lote',
+                    description: 'Crea una o varias mesas/barras al mismo tiempo enumeradas secuencialmente.',
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            tipo: { type: 'STRING', description: 'El tipo de espacio, DEBE ser "Mesa" o "Barra"' },
+                            cantidad: { type: 'NUMBER', description: 'Cuántas mesas se van a crear. Si solo pide una, es 1.' },
+                            numero_inicial: { type: 'NUMBER', description: 'El número desde el que empieza a contar (ej. 12).' }
+                        },
+                        required: ['tipo', 'cantidad', 'numero_inicial']
+                    }
+                },
+                {
+                    name: 'registrar_lote_ingrediente',
+                    description: 'Registra una nueva compra de envases para reabastecer un ingrediente del inventario.',
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            nombre_ingrediente: { type: 'STRING', description: 'Nombre del ingrediente que se compró' },
+                            envases: { type: 'NUMBER', description: 'Cantidad de envases o piezas compradas' }
+                        },
+                        required: ['nombre_ingrediente', 'envases']
+                    }
+                }
+            ]
+        }];
+
+        // 2. PRIMERA LLAMADA: Evaluación de Intención
+        let response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: mensaje,
+            contents: historial,
             config: {
                 systemInstruction: systemInstruction,
-                temperature: 0.2 // Baja temperatura para que sea analítico y no invente cosas
+                temperature: 0.1,
+                tools: tools
             }
         });
 
-        // Extraemos el texto de la respuesta y se lo mandamos al frontend
+        // 3. EJECUCIÓN DEL FUNCTION CALLING (Manejo Múltiple / Paralelo)
+        if (response.functionCalls && response.functionCalls.length > 0) {
+            
+            // 3.1 Guardamos TODAS las peticiones que hizo Gemini en el historial
+            historial.push(response.candidates[0].content); 
+            
+            const partesRespuestas = []; // Aquí acumularemos los resultados de todas las funciones
+
+            // 3.2 Iteramos sobre cada función que la IA haya pedido ejecutar
+            for (const call of response.functionCalls) {
+                const args = call.args;
+                let toolResult = {};
+                console.log(`🤖 IA solicitó ejecutar: ${call.name} con parámetros:`, args);
+
+                try {
+                    switch(call.name) {
+                        case 'consultar_kpis_hoy':
+                            const [statsHoy] = await pool.query(`
+                                SELECT 
+                                    COALESCE(SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END), 0) as ingresos,
+                                    COALESCE(SUM(CASE WHEN tipo = 'egreso' THEN monto ELSE 0 END), 0) as egresos
+                                FROM movimientos_financieros WHERE id_restaurante = ? AND DATE(fecha) = CURDATE()
+                            `, [id_rest]);
+                            toolResult = { 
+                                ingresos: parseFloat(statsHoy[0].ingresos), 
+                                egresos: parseFloat(statsHoy[0].egresos), 
+                                utilidad: parseFloat(statsHoy[0].ingresos) - parseFloat(statsHoy[0].egresos) 
+                            };
+                            break;
+
+                        case 'consultar_estadisticas_semana':
+                            const [topProds] = await pool.query(`
+                                SELECT p.nombre, SUM(pd.cantidad) as cant FROM pedido_detalles pd 
+                                JOIN productos p ON pd.id_producto = p.id_producto JOIN pedidos ped ON pd.id_pedido = ped.id_pedido 
+                                WHERE ped.id_restaurante = ? AND ped.fecha_creacion >= DATE(NOW() - INTERVAL 7 DAY) 
+                                GROUP BY p.id_producto ORDER BY cant DESC LIMIT 3`, [id_rest]);
+                            const [topIns] = await pool.query(`
+                                SELECT i.nombre, SUM(pd.cantidad * r.cantidad_usada) as cant FROM pedidos p
+                                JOIN pedido_detalles pd ON p.id_pedido = pd.id_pedido JOIN recetas r ON pd.id_producto = r.id_producto
+                                JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente WHERE p.id_restaurante = ? 
+                                AND p.fecha_creacion >= DATE(NOW() - INTERVAL 7 DAY) GROUP BY i.id_ingrediente ORDER BY cant DESC LIMIT 3`, [id_rest]);
+                            toolResult = { top_platillos: topProds, top_insumos: topIns };
+                            break;
+
+                        case 'registrar_gasto_extra':
+                            await pool.query(`INSERT INTO movimientos_financieros (id_restaurante, tipo, monto, descripcion) VALUES (?, 'egreso', ?, ?)`, [id_rest, args.monto, args.descripcion]);
+                            toolResult = { exito: true, mensaje: `Gasto de $${args.monto} por '${args.descripcion}' registrado en la base de datos.` };
+                            break;
+
+                        case 'agregar_mesas_lote':
+                            let creadas = [];
+                            // Hacemos el bucle en Node.js, quitándole el peso mental a la IA
+                            for(let i = 0; i < args.cantidad; i++) {
+                                let numMesa = args.numero_inicial + i;
+                                let nombreFinal = `${args.tipo} ${numMesa}`; 
+                                await pool.query(`INSERT INTO mesas (id_restaurante, numero_mesa, estado) VALUES (?, ?, 'libre')`, [id_rest, nombreFinal]);
+                                creadas.push(nombreFinal);
+                            }
+                            toolResult = { exito: true, mensaje: `Se crearon correctamente: ${creadas.join(', ')}.` };
+                            break;
+
+                        case 'registrar_lote_ingrediente':
+                            const [ings] = await pool.query(`SELECT id_ingrediente, nombre, cantidad_por_unidad, costo_unitario, dias_caducidad_estimado FROM ingredientes WHERE nombre LIKE ? AND id_restaurante = ?`, [`%${args.nombre_ingrediente}%`, id_rest]);
+                            
+                            if (ings.length === 0) {
+                                toolResult = { error: `No encontré ningún ingrediente parecido a '${args.nombre_ingrediente}' en el catálogo.` };
+                            } else if (ings.length > 1) {
+                                toolResult = { error: `Encontré varios ingredientes parecidos (${ings.map(i=>i.nombre).join(', ')}). Necesito el nombre más exacto.` };
+                            } else {
+                                const ing = ings[0];
+                                const cantTotal = args.envases * parseFloat(ing.cantidad_por_unidad);
+                                const gasto = cantTotal * parseFloat(ing.costo_unitario);
+                                const diasCaducidad = ing.dias_caducidad_estimado || 15; 
+
+                                await pool.query(`INSERT INTO lotes_ingredientes (id_ingrediente, id_restaurante, cantidad_inicial, cantidad_actual, fecha_caducidad) VALUES (?, ?, ?, ?, DATE_ADD(CURDATE(), INTERVAL ? DAY))`, [ing.id_ingrediente, id_rest, cantTotal, cantTotal, diasCaducidad]);
+                                await pool.query(`INSERT INTO movimientos_financieros (id_restaurante, tipo, categoria, monto, descripcion) VALUES (?, 'egreso', 'insumos', ?, ?)`, [id_rest, gasto, `Compra Stock IA: ${ing.nombre} (${args.envases} envases)`]);
+                                await pool.query(`UPDATE ingredientes i SET stock = (SELECT COALESCE(SUM(cantidad_actual),0) FROM lotes_ingredientes WHERE id_ingrediente = i.id_ingrediente AND estado = 'disponible') WHERE id_ingrediente = ?`, [ing.id_ingrediente]);
+                                
+                                toolResult = { exito: true, mensaje: `Añadí ${args.envases} envases de '${ing.nombre}'. Caducará en ${diasCaducidad} días. El gasto automático fue de $${gasto.toFixed(2)}.` };
+                            }
+                            break;
+                    }
+                } catch (err) {
+                    console.error(`Error ejecutando ${call.name}:`, err);
+                    toolResult = { error: `Fallo interno al ejecutar esta acción en la base de datos.` };
+                }
+
+                // 3.3 Agregamos la respuesta de ESTA función particular al arreglo
+                partesRespuestas.push({
+                    functionResponse: {
+                        name: call.name,
+                        response: toolResult
+                    }
+                });
+            }
+
+            // 3.4 Le devolvemos a Gemini TODAS las respuestas empaquetadas
+            historial.push({ role: 'user', parts: partesRespuestas });
+
+            // 4. SEGUNDA LLAMADA: La IA compila todos los resultados en texto humano
+            response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: historial,
+                config: {
+                    systemInstruction: systemInstruction,
+                    temperature: 0.1,
+                    tools: tools
+                }
+            });
+        }
+
+        // 5. ENVIAMOS RESPUESTA FINAL AL FRONTEND
         res.json({ respuesta: response.text });
 
     } catch (error) {
         console.error('[CHATBOT ERROR]:', error);
-        res.status(500).json({ error: 'Hubo un error de conexión con el asistente.' });
+        res.status(500).json({ error: 'Hubo un error al procesar la información.' });
     }
 });
 
@@ -1992,6 +2190,70 @@ app.get('/api/finanzas/consumo-ingredientes', requireAuth, requireOwner, async (
     } catch (error) {
         console.error("Error al calcular consumo de ingredientes:", error);
         res.status(500).json({ message: 'Error interno al procesar el consumo.' });
+    }
+});
+
+// ==========================================
+// RUTAS DE TABLAS CSV (ÚLTIMOS 7 DÍAS)
+// ==========================================
+
+// 1. Frecuencia de Platillos Vendidos
+app.get('/api/finanzas/csv-productos', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [productos] = await pool.query(`
+            SELECT p.nombre, SUM(pd.cantidad) as cantidad_vendida, SUM(pd.cantidad * pd.precio_en_pedido) as ingreso_generado
+            FROM pedidos ped
+            JOIN pedido_detalles pd ON ped.id_pedido = pd.id_pedido
+            JOIN productos p ON pd.id_producto = p.id_producto
+            WHERE ped.id_restaurante = ? 
+              AND ped.estado IN ('completado', 'inactivo', 'archivado')
+              AND ped.fecha_creacion >= DATE(NOW() - INTERVAL 7 DAY)
+            GROUP BY p.id_producto, p.nombre
+            ORDER BY cantidad_vendida DESC
+        `, [req.session.restauranteId]);
+        res.json(productos);
+    } catch (error) {
+        res.status(500).json({ message: 'Error al cargar CSV de productos.' });
+    }
+});
+
+// 2. Reporte Detallado de Consumo de Insumos (Todos, no solo el Top 5)
+app.get('/api/finanzas/csv-insumos', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [insumos] = await pool.query(`
+            SELECT i.nombre, SUM(pd.cantidad * r.cantidad_usada) as total_consumido, i.unidad_medida
+            FROM pedidos p
+            JOIN pedido_detalles pd ON p.id_pedido = pd.id_pedido
+            JOIN recetas r ON pd.id_producto = r.id_producto
+            JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+            WHERE p.id_restaurante = ? 
+              AND p.estado IN ('completado', 'inactivo', 'archivado')
+              AND p.fecha_creacion >= DATE(NOW() - INTERVAL 7 DAY)
+            GROUP BY i.id_ingrediente, i.nombre, i.unidad_medida
+            ORDER BY total_consumido DESC
+        `, [req.session.restauranteId]);
+        res.json(insumos);
+    } catch (error) {
+        res.status(500).json({ message: 'Error al cargar CSV de insumos.' });
+    }
+});
+
+// 3. Rendimiento de Meseros
+app.get('/api/finanzas/csv-meseros', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [meseros] = await pool.query(`
+            SELECT u.nombre_usuario, COUNT(p.id_pedido) as mesas_atendidas, SUM(p.total_calculado) as total_ingresado
+            FROM pedidos p
+            JOIN m_usuarios u ON p.id_mesero = u.id_usuario
+            WHERE p.id_restaurante = ? 
+              AND p.estado IN ('completado', 'inactivo', 'archivado')
+              AND p.fecha_creacion >= DATE(NOW() - INTERVAL 7 DAY)
+            GROUP BY u.id_usuario, u.nombre_usuario
+            ORDER BY total_ingresado DESC
+        `, [req.session.restauranteId]);
+        res.json(meseros);
+    } catch (error) {
+        res.status(500).json({ message: 'Error al cargar CSV de meseros.' });
     }
 });
 
