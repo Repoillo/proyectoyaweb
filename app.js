@@ -2529,5 +2529,23 @@ app.get('/api/finanzas/alertas-caducidad', requireAuth, requireOwner, async (req
     }
 });
 
+// [NUEVA RUTA] Obtener receta para la app móvil
+app.get('/api/movil/producto-receta/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [receta] = await pool.query(
+            `SELECT i.id_ingrediente, i.nombre
+             FROM recetas r
+             JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+             WHERE r.id_producto = ?`,
+            [id]
+        );
+        res.json(receta);
+    } catch (error) {
+        console.error('Error receta móvil:', error);
+        res.status(500).json({ message: 'Error interno al cargar receta' });
+    }
+});
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor corriendo en http://localhost:${PORT}`));
