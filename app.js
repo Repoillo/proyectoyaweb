@@ -2033,13 +2033,12 @@ app.get('/api/finanzas/dia', requireAuth, async (req, res) => {
 });
 
 // ==========================================
-// RUTA: TICKET COMPLETO (APP MÓVIL)
+// RUTA: TICKET COMPLETO ENRIQUECIDO (ESTILO CASA DE TOÑO)
 // ==========================================
 app.get('/api/movil/ticket', async (req, res) => {
     let { numero_mesa } = req.query;
-    const id_restaurante = 1; // Sigue fijo para el demo de la app móvil
+    const id_restaurante = 1; // Fijo para el alcance actual de la app móvil
 
-    // Normalizar nombre (ej. "1" -> "Mesa 1", respeta si envían "Barra 2")
     if (numero_mesa && !numero_mesa.toString().toLowerCase().startsWith('mesa') && !numero_mesa.toString().toLowerCase().startsWith('barra')) {
         numero_mesa = `Mesa ${numero_mesa}`;
     }
@@ -2054,13 +2053,13 @@ app.get('/api/movil/ticket', async (req, res) => {
         if (rest.length === 0) return res.status(404).json({ message: 'Restaurante no encontrado.' });
         const restInfo = rest[0];
 
-        // B. Buscar el pedido ACTIVO y al Mesero asignado (JOIN con m_usuarios)
+        // B. Buscar el pedido ACTIVO y al Mesero asignado
         const [pedidos] = await pool.query(
             `SELECT p.id_pedido, p.fecha_creacion, p.total_calculado, u.nombre_usuario AS mesero 
              FROM pedidos p
              LEFT JOIN m_usuarios u ON p.id_mesero = u.id_usuario
              WHERE p.mesa = ? AND p.id_restaurante = ? 
-             AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
+               AND p.estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
             [numero_mesa, id_restaurante]
         );
 
@@ -2069,7 +2068,7 @@ app.get('/api/movil/ticket', async (req, res) => {
         }
         const pedido = pedidos[0];
 
-        // C. Buscar los productos consumidos
+        // C. Buscar los productos consumidos (Para asegurar que no salgan líneas en blanco)
         const [detalles] = await pool.query(
             `SELECT p.nombre, pd.cantidad, pd.precio_en_pedido 
              FROM pedido_detalles pd
@@ -2078,27 +2077,42 @@ app.get('/api/movil/ticket', async (req, res) => {
             [pedido.id_pedido]
         );
 
-        // D. Matemáticas del Ticket (Desglose de Impuestos)
+        // D. Procesamiento y Desglose del Tiempo (Separar Fecha y Hora)
+        const fechaObj = new Date(pedido.fecha_creacion);
+        const fechaFormateada = fechaObj.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const horaFormateada = fechaObj.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        // E. Matemáticas del Ticket (Desglose de Impuestos y Propina sugerida)
         const ivaPorcentaje = parseFloat(restInfo.porcentaje_iva) || 16;
         const total = parseFloat(pedido.total_calculado);
-        
-        // Extracción del Subtotal real (Despejando la fórmula: T = S * 1.16)
         const subtotal = total / (1 + (ivaPorcentaje / 100));
         const iva = total - subtotal;
+        
+        // Calculamos el 10% de propina sugerida de manera automática para el desglose estético
+        const propinaSugerida = total * 0.10; 
+        const totalConPropina = total + propinaSugerida;
 
-        // E. Armar el JSON estructurado para la App
-        const ticketData = {
-            empresa: {
-                nombre: restInfo.nombre_restaurante,
+        // F. Estructuración Completa del JSON para el Frontend
+        res.json({
+            establecimiento: {
+                nombre_comercial: restInfo.nombre_restaurante,
+                razon_social: "RESTAURANTES MERTOCA S.A. DE C.V.", // Constante de estructura legal
                 rfc: restInfo.rfc || 'XAXX010101000',
+                regimen_fiscal: "601 - General de Ley Personas Morales",
                 direccion: restInfo.direccion || 'Dirección no configurada',
                 telefono: restInfo.telefono || 'Sin teléfono'
             },
-            ticket: {
-                folio: `ORD-${pedido.id_pedido}`,
-                fecha: pedido.fecha_creacion,
+            operacion: {
+                folio_referencia: `PT-055-${pedido.id_pedido.toString().padStart(3, '0')}`,
+                numero_ticket: `#${pedido.id_pedido + 39400}`, // Simulación de contador comercial continuo
+                fecha: fechaFormateada,
+                hora: horaFormateada,
                 mesa: numero_mesa,
-                le_atendio: pedido.mesero || 'Asignación automática'
+                clientes: "2", // Valor estándar de ocupación promedio para simulación
+                mesero: pedido.mesero || 'Asignación automática',
+                cajero: "Caja Principal",
+                reimpresion: "#1",
+                tipo_pedido: "Comedor / Urgente"
             },
             items: detalles.map(d => ({
                 cantidad: d.cantidad,
@@ -2106,19 +2120,24 @@ app.get('/api/movil/ticket', async (req, res) => {
                 precio_unitario: parseFloat(d.precio_en_pedido).toFixed(2),
                 importe: (d.cantidad * d.precio_en_pedido).toFixed(2)
             })),
-            importes: {
+            financiero: {
                 subtotal: subtotal.toFixed(2),
                 tasa_iva: `${ivaPorcentaje}%`,
                 iva: iva.toFixed(2),
-                total_pagar: total.toFixed(2)
+                total_antes_propina: total.toFixed(2),
+                propina_sugerida: propinaSugerida.toFixed(2),
+                total_final: totalConPropina.toFixed(2),
+                balance_restante: "0.00"
+            },
+            facturacion: {
+                url: "https://proyectoyaweb.onrender.com/facturacion",
+                leyenda: "Conserve su ticket para facturar."
             }
-        };
-
-        res.json(ticketData);
+        });
 
     } catch (error) {
-        console.error('Error generando ticket:', error);
-        res.status(500).json({ message: 'Error al generar el ticket.' });
+        console.error('Error generando ticket enriquecido:', error);
+        res.status(500).json({ message: 'Error interno del servidor al procesar el ticket.' });
     }
 });
 
