@@ -2079,8 +2079,19 @@ app.get('/api/movil/ticket', async (req, res) => {
 
         // D. Procesamiento y Desglose del Tiempo (Separar Fecha y Hora)
         const fechaObj = new Date(pedido.fecha_creacion);
-        const fechaFormateada = fechaObj.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        const horaFormateada = fechaObj.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        // OBLIGAMOS A JAVASCRIPT A PENSAR EN LA CIUDAD DE MÉXICO (UTC-6)
+        const opcionesFecha = { 
+            timeZone: 'America/Mexico_City', 
+            day: '2-digit', month: '2-digit', year: 'numeric' 
+        };
+        const opcionesHora = { 
+            timeZone: 'America/Mexico_City', 
+            hour: '2-digit', minute: '2-digit', hour12: true 
+        };
+
+        const fechaFormateada = fechaObj.toLocaleDateString('es-MX', opcionesFecha);
+        const horaFormateada = fechaObj.toLocaleTimeString('es-MX', opcionesHora);
 
         // E. Matemáticas del Ticket (Desglose de Impuestos y Propina sugerida)
         const ivaPorcentaje = parseFloat(restInfo.porcentaje_iva) || 16;
