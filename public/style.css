@@ -1538,3 +1538,62 @@ input {
     text-transform: uppercase;
     font-size: 0.85em;
 }
+
+.mensaje-ia p {
+    margin: 0;
+    padding: 0;
+    font-family: inherit; /* Fuerza a usar la fuente de tu diseño */
+    font-size: inherit;
+    line-height: 1.4;
+}
+
+.mensaje-ia ul, .mensaje-ia ol {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding-left: 20px;
+}
+
+.mensaje-ia strong {
+    color: #2c3e50; /* Negritas más elegantes */
+}
+/* ==========================================
+   TOOLTIP FLOTANTE (LOTES EN RIESGO)
+   ========================================== */
+.contenedor-alerta-hover:hover .tooltip-lotes:not(.oculto) {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.tooltip-lotes {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 12px;
+    background: #2c3e50;
+    color: #fff;
+    padding: 12px;
+    border-radius: 6px;
+    width: max-content;
+    max-width: 300px;
+    font-size: 0.85em;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    z-index: 100;
+    
+    /* Estado inicial oculto con animación suave */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-5px);
+    transition: all 0.2s ease-in-out;
+}
+
+/* El piquito del globo de diálogo */
+.tooltip-lotes::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 20px;
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent transparent #2c3e50 transparent;
+}

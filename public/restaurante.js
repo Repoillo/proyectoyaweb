@@ -222,12 +222,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (seccion === 'empleados') {
                     itemId = item.id_empleado;
                     fila.dataset.empleadosData = JSON.stringify(item);
-                      innerHTML = `
-                        <td>${escapeHTML(item.nombre_empleado)}</td>
-                        <td>${escapeHTML(item.rol)}</td>
-                        <td>$${parseFloat(item.sueldo).toFixed(2)}</td>`;
-                
-                } else if (seccion === 'mesas') {
+                    
+                    // Lógica analítica del Badge Visual
+                    const tieneAcceso = item.correo_usuario && item.correo_usuario.includes('@');
+                    const badgeHTML = tieneAcceso 
+                        ? `<span style="background-color: #2ecc71; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.75em; font-weight: bold; margin-left: 10px;">Vinculado</span>`
+                        : `<span style="background-color: #95a5a6; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.75em; font-weight: bold; margin-left: 10px;">Sin acceso</span>`;
+
+                    innerHTML = `
+                        <td>
+                            <div style="display: flex; align-items: center;">
+                                ${escapeHTML(item.nombre_empleado)} ${badgeHTML}
+                            </div>
+                            ${tieneAcceso ? `<small style="color: #7f8c8d; display: block; margin-top: 4px;">${escapeHTML(item.correo_usuario)}</small>` : ''}
+                        </td>
+                        <td style="text-transform: capitalize;">${escapeHTML(item.rol)}</td>
+                        <td>$${parseFloat(item.sueldo).toFixed(2)}</td>
+                    `;
+                }else if (seccion === 'mesas') {
                     itemId = item.id_mesa;
                     fila.dataset.mesasData = JSON.stringify(item);
                     const estadoClass = item.estado === 'ocupada' ? 'color:red; font-weight:bold;' : 'color:green; font-weight:bold;';
@@ -495,15 +507,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
 
         } else if (seccion === 'empleados') {
+            const tieneCorreo = datos.correo_usuario && datos.correo_usuario.includes('@');
+            
+            const campoCorreoHTML = modoFormulario === 'editar' 
+                ? `<input type="email" name="correo_usuario" value="${escapeHTML(datos.correo_usuario || '')}" 
+                    ${tieneCorreo ? 'readonly title="El correo vinculado no se puede editar aquí"' : 'placeholder="Sin correo vinculado" readonly'} 
+                    style="background-color: #eee; cursor: not-allowed;">`
+                : `<input type="email" name="correo_usuario" value="" placeholder="Opcional: ej. correo@restaurante.com">`;
+
             camposDinamicos.innerHTML = `
-                <label>Nombre:</label><input type="text" name="nombre_empleado" value="${escapeHTML(datos.nombre_empleado || '')}" required>
+                <label>Nombre del Empleado:</label>
+                <input type="text" name="nombre_empleado" value="${escapeHTML(datos.nombre_empleado || '')}" required>
+                
                 <label>Rol:</label>
-                <select name="rol" required>
+                <select name="rol" required style="width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 5px;">
+                    <option value="Gerente" ${datos.rol === 'Gerente' ? 'selected' : ''}>Gerente</option>
+                    <option value="Cajero" ${datos.rol === 'Cajero' ? 'selected' : ''}>Cajero</option>
                     <option value="Cocinero" ${datos.rol === 'Cocinero' ? 'selected' : ''}>Cocinero</option>
                     <option value="Mesero" ${datos.rol === 'Mesero' ? 'selected' : ''}>Mesero</option>
-                    <option value="Cajero" ${datos.rol === 'Cajero' ? 'selected' : ''}>Cajero</option>
                 </select>
-                <label>Sueldo Diario:</label><input type="number" name="sueldo" value="${datos.sueldo || ''}" min="1" max="10000" required>
+                
+                <label>Sueldo Diario ($):</label>
+                <input type="number" name="sueldo" value="${datos.sueldo || ''}" min="1" max="10000" required>
+                
+                <label>Correo (Acceso al Sistema):</label>
+                ${campoCorreoHTML}
+                ${modoFormulario === 'agregar' 
+                    ? `<small style="color:#7f8c8d; display:block; margin-top:-10px; margin-bottom:20px;">Si llenas esto, se enviará un correo para crear su cuenta.</small>` 
+                    : '<div style="margin-bottom: 20px;"></div>'}
             `;
         } else if (seccion === 'mesas') {
             camposDinamicos.innerHTML = `
@@ -601,16 +632,62 @@ document.addEventListener('DOMContentLoaded', () => {
             renderizarGraficasEficiencia(dashboard.operativa);
 
             // 4. Llenar Historial Inferior y Comparador (Tu código original intacto)
-            renderizarFinanzas(dias);
             llenarSelectoresComparacion(dias);
             cargarTopIngredientes();
             renderizarFinanzas(dias);
-            llenarSelectoresComparacion(dias);
             cargarTablasCSV();
+            cargarAlertasCaducidad();
 
         } catch (error) {
             console.error('Error:', error);
             listaFinanzasDias.innerHTML = '<p style="color:red; text-align:center;">Error de conexión con el dashboard.</p>';
+        }
+    }
+    async function cargarAlertasCaducidad() {
+        const spanCaducidad = getEl('ingredientesCaducidad');
+        const tooltip = getEl('tooltipCaducidad');
+        const listaLotes = getEl('listaLotesRiesgo');
+
+        if(!spanCaducidad || !tooltip) return;
+
+        try {
+            const res = await fetch('/api/finanzas/alertas-caducidad', { credentials: 'include' });
+            const datos = await res.json();
+
+            // Si no hay lotes en riesgo, mostramos un mensaje verde de tranquilidad
+            if (datos.length === 0) {
+                spanCaducidad.textContent = "Inventario sano (0 riesgos)";
+                spanCaducidad.style.color = '#27ae60';
+                spanCaducidad.style.borderBottom = 'none';
+                spanCaducidad.style.cursor = 'default';
+                tooltip.classList.add('oculto');
+                return;
+            }
+
+            // Si hay riesgos, pintamos de rojo y llenamos la lista
+            spanCaducidad.textContent = `${datos.length} Lotes en riesgo`;
+            spanCaducidad.style.color = '#e74c3c';
+            spanCaducidad.style.borderBottom = '1px dashed #e74c3c';
+            spanCaducidad.style.cursor = 'help';
+            tooltip.classList.remove('oculto');
+            
+            listaLotes.innerHTML = '';
+            
+            datos.forEach(lote => {
+                // Lógica de colores semaforizados
+                let colorTexto = lote.dias_restantes < 0 ? '#ff7675' : (lote.dias_restantes === 0 ? '#fab1a0' : '#ffeaa7');
+                let textoDias = lote.dias_restantes < 0 ? `Caducó hace ${Math.abs(lote.dias_restantes)} días` : (lote.dias_restantes === 0 ? 'Caduca hoy' : `En ${lote.dias_restantes} días`);
+                
+                listaLotes.innerHTML += `
+                    <li style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
+                        <strong style="color: #fff;">${escapeHTML(lote.nombre)}</strong>: ${parseFloat(lote.cantidad_actual).toFixed(2)} ${escapeHTML(lote.unidad_medida)}<br>
+                        <span style="color: ${colorTexto}; font-size: 0.9em;">${textoDias}</span>
+                    </li>
+                `;
+            });
+
+        } catch(e) {
+            console.error("Error cargando alertas:", e);
         }
     }
 
@@ -1420,14 +1497,19 @@ document.addEventListener('DOMContentLoaded', () => {
         div.classList.add('mensaje-chat');
         div.classList.add(emisor === 'usuario' ? 'mensaje-usuario' : 'mensaje-ia');
         
-        // Blindaje HTML para la respuesta
-        div.innerHTML = escapeHTML(texto);
+        if (emisor === 'usuario' || esTemporal) {
+            div.textContent = texto;
+        } else {
+            const htmlCrudo = marked.parse(texto);
+            // 2. Sanitizamos el HTML (Elimina <script>, onmouseovers, etc.)
+            const htmlLimpio = DOMPurify.sanitize(htmlCrudo);
+            // 3. Inyectamos de forma segura
+            div.innerHTML = htmlLimpio;
+        }
         
-        // Si es el mensaje temporal de "pensando", le damos un ID para borrarlo luego
         if (esTemporal) {
             const tempId = 'temp-' + Date.now();
             div.id = tempId;
-            // Un poco de estilo sutil para el estado de espera
             div.style.opacity = '0.6';
             div.style.fontStyle = 'italic';
         }

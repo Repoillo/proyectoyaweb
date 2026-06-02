@@ -9,6 +9,8 @@ const cron = require('node-cron');
 const app = express();
 const { GoogleGenAI } = require('@google/genai');
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const nodemailer = require('nodemailer');
+const crypto = require('crypto'); // Nativo de Node, para generar contraseñas aleatorias
 
 app.use(cors({
     origin: 'http://localhost:10000',
@@ -39,6 +41,28 @@ pool.getConnection()
     });
 
 const sessionStore = new MySQLStore({}, pool);
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+// Verificación de conexión segura
+transporter.verify().then(() => {
+    console.log('📧 Nodemailer conectado a Gmail de forma segura (Oculto en .env).');
+}).catch(err => {
+    console.error('❌ Error configurando Nodemailer:', err);
+});
+
+// Verificamos que el cartero esté listo al arrancar el servidor
+transporter.verify().then(() => {
+    console.log('📧 Nodemailer listo para enviar correos.');
+}).catch(err => {
+    console.error('❌ Error configurando Nodemailer:', err);
+});
 
 app.use(session({
     key: 'sid',
@@ -136,9 +160,9 @@ app.post('/api/auth/register', async (req, res) => {
         const contra_hash = await bcrypt.hash(contra, 10);
         
         await pool.query(
-            `INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, id_restaurante, rol) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [nombre_usuario, correo_usuario, contra_hash, id_restaurante, rolFinal]
+            `INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, rol, id_restaurante, estado) 
+     VALUES (?, ?, ?, ?, ?, 'activo')`,
+    [nombre_empleado, correo_usuario, hashPassword, rolParaAcceso, id_restaurante]
         );
         
         res.status(201).json({ message: 'Usuario registrado exitosamente.' });
@@ -562,73 +586,156 @@ app.delete('/api/ingredientes/:id', requireAuth, requireOwner, async (req, res) 
     }
 });
 
-// --- EMPLEADOS (CON LÓGICA DE RECICLAJE) ---
+// ==========================================
+// RUTA: OBTENER EMPLEADOS (CON ESTADO DE CUENTA)
+// ==========================================
 app.get('/api/empleados', requireAuth, requireOwner, async (req, res) => {
     try {
-        const [empleados] = await pool.query(
-            `SELECT id_empleado, nombre_empleado, rol, sueldo 
-             FROM empleados 
-             WHERE id_restaurante = ? AND estado = 'activo'`, 
-            [req.session.restauranteId]
-        );
+        const [empleados] = await pool.query(`
+            SELECT 
+                e.id_empleado, 
+                e.nombre_empleado, 
+                e.rol, 
+                e.sueldo, 
+                u.correo_usuario 
+            FROM empleados e
+            LEFT JOIN m_usuarios u ON e.id_usuario = u.id_usuario
+            WHERE e.id_restaurante = ? 
+              AND (e.estado = 'activo' OR e.estado IS NULL)
+        `, [req.session.restauranteId]);
+        
         res.json(empleados);
-    } catch(error) {
-        console.error('Error al obtener empleados:', error);
-        res.status(500).json({message: 'Error al cargar los empleados.'});
+    } catch (error) {
+        console.error("Error al obtener empleados:", error);
+        res.status(500).json({ message: 'Error interno del servidor.' });
     }
 });
 
+// ==========================================
+// RUTA: CREAR EMPLEADO Y CUENTA (NODEMAILER)
+// ==========================================
 app.post('/api/empleados', requireAuth, requireOwner, async (req, res) => {
+    // 1. Extraemos los datos con los nombres EXACTOS que manda el frontend
+    const { nombre_empleado, rol, sueldo, correo_usuario } = req.body;
+    const id_restaurante = req.session.restauranteId;
+
+    if (!nombre_empleado || !rol || !sueldo) {
+        return res.status(400).json({ error: 'Faltan datos obligatorios (Nombre, Rol o Sueldo).' });
+    }
+
+    // Iniciamos una conexión especial para la Transacción
+    const conn = await pool.getConnection();
+    
     try {
-        const { nombre_empleado, rol, sueldo } = req.body;
-        const id_restaurante = req.session.restauranteId;
-        
-        // 1. VERIFICAR SI YA EXISTE (Inactivo o Activo)
-        const [existente] = await pool.query(
-            `SELECT id_empleado, estado FROM empleados 
-             WHERE nombre_empleado = ? AND id_restaurante = ?`,
-            [nombre_empleado.trim(), id_restaurante]
-        );
+        await conn.beginTransaction();
 
-        if (existente.length > 0) {
-            // CASO A: YA EXISTE
-            const empleado = existente[0];
+        let id_usuario_final = null;
+        let correoEnviado = false;
 
-            if (empleado.estado === 'activo') {
-                // Opcional: Si quieres permitir homónimos, quita este if.
-                // Pero es mejor avisar.
-                return res.status(409).json({ message: 'Ya existe un empleado con este nombre.' });
+        // Si el dueño ingresó un correo, iniciamos la lógica de cuentas
+        if (correo_usuario && correo_usuario.trim() !== '') {
+            const correoLimpio = correo_usuario.trim().toLowerCase();
+
+            // 2. Mapeo del rol para que MySQL no rechace el ENUM de m_usuarios
+            let rolParaAcceso = 'cocinero'; // Default por seguridad
+            if (rol === 'Gerente' || rol === 'Cajero') rolParaAcceso = 'dueño';
+            else if (rol === 'Mesero') rolParaAcceso = 'mesero';
+
+            // 3. Verificar si el correo ya existe (Usando columna 'estado' correcta)
+            const [usuariosExistentes] = await conn.query(
+                `SELECT id_usuario, estado FROM m_usuarios WHERE correo_usuario = ?`, 
+                [correoLimpio]
+            );
+
+            // 4. Generar contraseña temporal segura y encriptarla
+            const tempPassword = crypto.randomBytes(4).toString('hex'); // Ej: 8f4a2b1c
+            const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+            if (usuariosExistentes.length > 0) {
+                const userDb = usuariosExistentes[0];
+                
+                if (userDb.estado === 'activo') {
+                    // Colisión: El correo lo usa alguien activo
+                    await conn.rollback();
+                    conn.release();
+                    return res.status(400).json({ error: 'Ese correo ya está siendo utilizado por un empleado activo.' });
+                } else {
+                    // Resurrección: Era inactivo. Lo activamos con columnas correctas.
+                    await conn.query(
+                        `UPDATE m_usuarios SET estado = 'activo', contra_hash = ? WHERE id_usuario = ?`,
+                        [hashedPassword, userDb.id_usuario]
+                    );
+                    id_usuario_final = userDb.id_usuario;
+                }
+            } else {
+                // Creación: Variables que SÍ existen y columnas correctas
+                const [resultUsuario] = await conn.query(
+                    `INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, rol, id_restaurante, estado) 
+                    VALUES (?, ?, ?, ?, ?, 'activo')`,
+                    [nombre_empleado, correoLimpio, hashedPassword, rolParaAcceso, id_restaurante]
+                );
+                id_usuario_final = resultUsuario.insertId;
             }
 
-            // CASO B: EXISTE PERO INACTIVO -> REVIVIR
-            await pool.query(
-                `UPDATE empleados 
-                 SET rol = ?, sueldo = ?, estado = 'activo' 
-                 WHERE id_empleado = ?`,
-                [rol, sueldo, empleado.id_empleado]
-            );
-            return res.status(200).json({ message: 'Empleado reactivado y actualizado.' });
+            // 5. Disparar el correo electrónico
+            const mailOptions = {
+                from: process.env.EMAIL_USER,
+                to: correoLimpio,
+                subject: '🍽️ Bienvenido al equipo - Tus accesos',
+                html: `
+                    <div style="font-family: Arial, sans-serif; color: #2c3e50; max-width: 500px; margin: auto; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
+                        <h2 style="color: #3498db;">Hola, ${nombre_empleado}</h2>
+                        <p>Has sido dado de alta exitosamente en el sistema del restaurante.</p>
+                        <p>Estas son tus credenciales de acceso. Te recomendamos no compartirlas con nadie:</p>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                            <p style="margin: 5px 0;"><strong>Usuario:</strong> ${correoLimpio}</p>
+                            <p style="margin: 5px 0;"><strong>Contraseña:</strong> <span style="color: #e74c3c; font-weight: bold; letter-spacing: 1px;">${tempPassword}</span></p>
+                        </div>
+                        <p style="font-size: 0.85em; color: #7f8c8d;">Atentamente, <br>La Administración</p>
+                    </div>
+                `
+            };
 
-        } else {
-            // CASO C: NO EXISTE -> CREAR
-            await pool.query(
-                `INSERT INTO empleados (id_restaurante, nombre_empleado, rol, sueldo, estado) 
-                 VALUES (?, ?, ?, ?, 'activo')`,
-                [id_restaurante, nombre_empleado.trim(), rol, sueldo]
-            );
-            return res.status(201).json({ message: 'Empleado creado exitosamente.' });
+            // Mandamos el correo sin trabar la base de datos
+            transporter.sendMail(mailOptions, (error, info) => {
+                if (error) console.error('❌ Error enviando correo a empleado:', error);
+                else console.log('✅ Correo de bienvenida enviado a:', correoLimpio);
+            });
+            
+            correoEnviado = true;
         }
 
-    } catch(error) {
-        console.error('Error al crear empleado:', error);
-        res.status(500).json({message: 'Error al crear el empleado.'});
+        // 6. Registrar al empleado en la nómina (tabla empleados)
+        // Usamos id_usuario_final, que será NULL si no se puso correo
+        await conn.query(
+            `INSERT INTO empleados (id_restaurante, nombre_empleado, rol, sueldo, id_usuario, estado) 
+             VALUES (?, ?, ?, ?, ?, 'activo')`,
+            [id_restaurante, nombre_empleado, rol, sueldo, id_usuario_final]
+        );
+
+        // Confirmamos la transacción a la base de datos
+        await conn.commit();
+        conn.release();
+
+        res.json({ 
+            exito: true, 
+            mensaje: correoEnviado 
+                ? 'Empleado contratado y credenciales enviadas por correo.' 
+                : 'Empleado contratado sin acceso al sistema.'
+        });
+
+    } catch (error) {
+        await conn.rollback();
+        conn.release();
+        console.error('Error en contratación:', error);
+        res.status(500).json({ error: 'Fallo interno al registrar al empleado.' });
     }
 });
 
 app.put('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
-        const { nombre_empleado, rol, sueldo } = req.body;
+        const { nombre_empleado, rol, sueldo } = req.body; // NO extraigas el correo aquí
         const id_restaurante = req.session.restauranteId;
         
         await pool.query(
@@ -2254,6 +2361,27 @@ app.get('/api/finanzas/csv-meseros', requireAuth, requireOwner, async (req, res)
         res.json(meseros);
     } catch (error) {
         res.status(500).json({ message: 'Error al cargar CSV de meseros.' });
+    }
+});
+
+// ==========================================
+// RUTA: ALERTAS DE CADUCIDAD DETALLADAS
+// ==========================================
+app.get('/api/finanzas/alertas-caducidad', requireAuth, requireOwner, async (req, res) => {
+    try {
+        const [lotes] = await pool.query(`
+            SELECT i.nombre, l.cantidad_actual, i.unidad_medida, DATEDIFF(l.fecha_caducidad, CURDATE()) as dias_restantes
+            FROM lotes_ingredientes l
+            JOIN ingredientes i ON l.id_ingrediente = i.id_ingrediente
+            WHERE l.id_restaurante = ? 
+              AND l.estado = 'disponible' 
+              AND l.fecha_caducidad <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+            ORDER BY dias_restantes ASC
+        `, [req.session.restauranteId]);
+        
+        res.json(lotes);
+    } catch (error) {
+        res.status(500).json({ message: 'Error al cargar alertas.' });
     }
 });
 
