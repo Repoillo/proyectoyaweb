@@ -92,7 +92,7 @@ CREATE TABLE `config_gastos_diarios` (
   PRIMARY KEY (`id_gasto_fijo`),
   KEY `id_restaurante` (`id_restaurante`),
   CONSTRAINT `config_gastos_diarios_ibfk_1` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -101,7 +101,7 @@ CREATE TABLE `config_gastos_diarios` (
 
 LOCK TABLES `config_gastos_diarios` WRITE;
 /*!40000 ALTER TABLE `config_gastos_diarios` DISABLE KEYS */;
-INSERT INTO `config_gastos_diarios` VALUES (7,1,'luz',100.00);
+INSERT INTO `config_gastos_diarios` VALUES (8,1,'Luz, Agua y Gas',250.00),(9,1,'Mantenimiento Sucursal',150.00);
 /*!40000 ALTER TABLE `config_gastos_diarios` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -119,10 +119,13 @@ CREATE TABLE `empleados` (
   `rol` varchar(45) NOT NULL,
   `sueldo` decimal(10,2) NOT NULL,
   `estado` enum('activo','inactivo') NOT NULL DEFAULT 'activo',
+  `id_usuario` int DEFAULT NULL,
   PRIMARY KEY (`id_empleado`),
   KEY `fk_empleados_restaurante` (`id_restaurante`),
-  CONSTRAINT `fk_empleados_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  KEY `fk_empleados_usuario` (`id_usuario`),
+  CONSTRAINT `fk_empleados_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_empleados_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `m_usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -131,7 +134,7 @@ CREATE TABLE `empleados` (
 
 LOCK TABLES `empleados` WRITE;
 /*!40000 ALTER TABLE `empleados` DISABLE KEYS */;
-INSERT INTO `empleados` VALUES (1,1,'pepe','Cocinero',10000.00,'activo');
+INSERT INTO `empleados` VALUES (1,1,'Angel Cocinero','Cocinero',10000.00,'activo',2),(2,1,'Angel mesero','Mesero',10000.00,'activo',3);
 /*!40000 ALTER TABLE `empleados` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -155,7 +158,7 @@ CREATE TABLE `ingredientes` (
   PRIMARY KEY (`id_ingrediente`),
   UNIQUE KEY `idx_restaurante_nombre_ing` (`id_restaurante`,`nombre`),
   CONSTRAINT `fk_ingredientes_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -164,7 +167,7 @@ CREATE TABLE `ingredientes` (
 
 LOCK TABLES `ingredientes` WRITE;
 /*!40000 ALTER TABLE `ingredientes` DISABLE KEYS */;
-INSERT INTO `ingredientes` VALUES (1,1,'Leche','ml',0.035000,79976.00,'activo',1000.00,NULL);
+INSERT INTO `ingredientes` VALUES (20,1,'Maíz Cacahuazintle','gr',0.050000,14750.00,'activo',5000.00,15),(21,1,'Carne de Cerdo (Maciza)','gr',0.120000,39850.00,'activo',5000.00,5),(22,1,'Masa de Maíz','gr',0.030000,8000.00,'activo',2000.00,3),(23,1,'Bistec de Res','gr',0.180000,8000.00,'activo',2000.00,4),(24,1,'Lechuga','gr',0.020000,2000.00,'activo',1000.00,6),(25,1,'Crema','ml',0.040000,3000.00,'activo',1000.00,14),(26,1,'Queso Rallado','gr',0.090000,7000.00,'activo',1000.00,20),(27,1,'Agua de Horchata','ml',0.015000,35000.00,'activo',4000.00,3),(28,1,'prueba','gr',1000.000000,0.00,'activo',1.00,1);
 /*!40000 ALTER TABLE `ingredientes` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -189,7 +192,7 @@ CREATE TABLE `lotes_ingredientes` (
   KEY `fk_lote_restaurante` (`id_restaurante`),
   CONSTRAINT `fk_lote_ingrediente` FOREIGN KEY (`id_ingrediente`) REFERENCES `ingredientes` (`id_ingrediente`) ON DELETE CASCADE,
   CONSTRAINT `fk_lote_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -198,6 +201,7 @@ CREATE TABLE `lotes_ingredientes` (
 
 LOCK TABLES `lotes_ingredientes` WRITE;
 /*!40000 ALTER TABLE `lotes_ingredientes` DISABLE KEYS */;
+INSERT INTO `lotes_ingredientes` VALUES (8,21,1,5000.00,4850.00,'2026-05-30 13:00:01','2026-06-04','disponible'),(9,24,1,2000.00,2000.00,'2026-05-30 13:00:01','2026-06-05','disponible'),(10,21,1,5000.00,5000.00,'2026-06-01 09:43:07','2026-06-06','disponible'),(11,21,1,20000.00,20000.00,'2026-06-01 10:02:36','2026-06-06','disponible'),(12,28,1,1.00,1.00,'2026-06-01 10:13:17','2026-06-01','caducado'),(13,22,1,8000.00,8000.00,'2026-06-02 00:04:14','2026-06-09','disponible'),(14,23,1,8000.00,8000.00,'2026-06-02 00:04:22','2026-06-09','disponible'),(15,20,1,15000.00,14750.00,'2026-06-02 00:04:28','2026-06-10','disponible'),(16,25,1,3000.00,3000.00,'2026-06-02 00:04:36','2026-06-12','disponible'),(17,26,1,7000.00,7000.00,'2026-06-02 00:04:46','2026-06-08','disponible'),(18,27,1,36000.00,35000.00,'2026-06-02 00:04:56','2026-06-11','disponible'),(19,21,1,5000.00,5000.00,'2026-06-02 00:15:10','2026-06-07','disponible'),(20,21,1,5000.00,5000.00,'2026-06-02 00:15:26','2026-06-07','disponible');
 /*!40000 ALTER TABLE `lotes_ingredientes` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -229,7 +233,7 @@ CREATE TABLE `m_usuarios` (
 
 LOCK TABLES `m_usuarios` WRITE;
 /*!40000 ALTER TABLE `m_usuarios` DISABLE KEYS */;
-INSERT INTO `m_usuarios` VALUES (1,1,'angel','hola@gmail.com','$2b$10$EE/JO6m5gtqJ2zTPmjc65.JpKSugGU9E8/.mrwXc4Bq9GRk7os4JO','dueño','activo'),(2,1,'mesero','mesero@gmail.com','$2b$10$LK84QsJTVW/9e93XQeYRGuj6C5ajVbgYHPlxQVWJa5rx9ajE0PwpW','cocinero','activo'),(3,1,'mesero','mesero2@gmail.com','$2b$10$bh8aemFEiH8x2pDjwfT9HeJLrmLA2PFx4HbQ2I5lkWJ7g1wtRmH0O','mesero','activo');
+INSERT INTO `m_usuarios` VALUES (1,1,'angel','hola@gmail.com','$2b$10$EE/JO6m5gtqJ2zTPmjc65.JpKSugGU9E8/.mrwXc4Bq9GRk7os4JO','dueño','activo'),(2,1,'Angel Cocinero','angeltima2605@gmail.com','$2b$10$LHysPdpRApg2e/nj0BIMdu36BB1YaUKRG7oT.v/KQGRSBvk76C19W','cocinero','activo'),(3,1,'Angel mesero','tinoco.martinez.angel.alexander@gmail.com','$2b$10$ybU/RmFzpbnc1t73JMY4QeqtsRo42Wofji/xzhebX3vA4FQa9Ql5C','mesero','activo');
 /*!40000 ALTER TABLE `m_usuarios` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -246,10 +250,11 @@ CREATE TABLE `mesas` (
   `numero_mesa` varchar(50) NOT NULL,
   `estado` enum('libre','ocupada') NOT NULL DEFAULT 'libre',
   `codigo_sesion` varchar(10) DEFAULT NULL,
+  `id_mesero` int DEFAULT NULL,
   PRIMARY KEY (`id_mesa`),
   KEY `fk_mesas_restaurante` (`id_restaurante`),
   CONSTRAINT `fk_mesas_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=28 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -258,7 +263,7 @@ CREATE TABLE `mesas` (
 
 LOCK TABLES `mesas` WRITE;
 /*!40000 ALTER TABLE `mesas` DISABLE KEYS */;
-INSERT INTO `mesas` VALUES (6,1,'Mesa 3','libre',NULL),(7,1,'Mesa 1','libre',NULL),(8,1,'Mesa 2','ocupada','862'),(9,1,'Barra 8','ocupada','649');
+INSERT INTO `mesas` VALUES (11,1,'Mesa 1','libre',NULL,NULL),(12,1,'Mesa 2','libre',NULL,NULL),(13,1,'Mesa 3','libre',NULL,NULL),(14,1,'Mesa 4','libre',NULL,NULL),(15,1,'Mesa 5','libre',NULL,NULL),(16,1,'Barra 1','libre',NULL,NULL),(17,1,'Barra 2','libre',NULL,NULL),(18,1,'Mesa 6','libre',NULL,NULL),(21,1,'mesa 12','libre',NULL,NULL),(22,1,'Mesa 13','libre',NULL,NULL),(23,1,'Mesa 14','libre',NULL,NULL),(24,1,'Mesa 15','libre',NULL,NULL),(25,1,'Mesa 16','libre',NULL,NULL),(26,1,'Mesa 17','libre',NULL,NULL),(27,1,'Barra 8','libre',NULL,NULL);
 /*!40000 ALTER TABLE `mesas` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -280,7 +285,7 @@ CREATE TABLE `movimientos_financieros` (
   PRIMARY KEY (`id_movimiento`),
   KEY `fk_movimientos_restaurante` (`id_restaurante`),
   CONSTRAINT `fk_movimientos_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=70 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -289,6 +294,7 @@ CREATE TABLE `movimientos_financieros` (
 
 LOCK TABLES `movimientos_financieros` WRITE;
 /*!40000 ALTER TABLE `movimientos_financieros` DISABLE KEYS */;
+INSERT INTO `movimientos_financieros` VALUES (33,1,'ingreso','venta',292.00,'Cierre Mesa 1 (Ticket ORD-600)','2026-05-29 11:47:44'),(34,1,'ingreso','venta',247.00,'Cierre Mesa 3 (Ticket ORD-601)','2026-05-28 11:47:44'),(35,1,'ingreso','venta',168.00,'Cierre Barra 2 (Ticket ORD-602)','2026-05-27 11:47:44'),(36,1,'ingreso','venta',416.00,'Cierre Mesa 5 (Ticket ORD-603)','2026-05-26 11:47:44'),(37,1,'ingreso','venta',124.00,'Cierre Mesa 1 (Ticket ORD-604)','2026-05-25 11:47:44'),(38,1,'egreso','insumos',850.00,'Proveedor Central (Maíz y Maciza)','2026-05-27 11:47:44'),(39,1,'egreso','otros',1200.00,'Nómina Diaria (Automática)','2026-05-30 11:47:48'),(40,1,'egreso','otros',250.00,'Gasto Fijo: Luz, Agua y Gas','2026-05-30 11:47:48'),(41,1,'egreso','otros',150.00,'Gasto Fijo: Mantenimiento Sucursal','2026-05-30 11:47:48'),(42,1,'ingreso','venta',246.00,'Cierre Mesa 1 (Ticket ORD-700)','2026-05-30 12:40:00'),(43,1,'ingreso','venta',169.00,'Cierre Mesa 2 (Ticket ORD-701)','2026-05-30 13:50:00'),(44,1,'ingreso','venta',461.00,'Cierre Mesa 4 (Ticket ORD-702)','2026-05-30 15:10:00'),(45,1,'egreso','otros',14.00,'compra de tortillas','2026-05-30 12:53:37'),(46,1,'egreso','insumos',600.00,'Compra Stock IA: Carne de Cerdo (Maciza) (1 envases)','2026-05-30 13:00:01'),(47,1,'egreso','insumos',40.00,'Compra Stock IA: Lechuga (2 envases)','2026-05-30 13:00:01'),(48,1,'egreso','otros',120.00,'Servilletas','2026-05-30 13:00:01'),(49,1,'egreso','otros',12.00,'Shampoo','2026-05-30 13:00:01'),(50,1,'egreso','otros',50.00,'se rompio un plato nooo','2026-05-30 13:11:47'),(51,1,'egreso','otros',1200.00,'Nómina Diaria (Automática)','2026-06-01 09:42:47'),(52,1,'egreso','otros',250.00,'Gasto Fijo: Luz, Agua y Gas','2026-06-01 09:42:47'),(53,1,'egreso','otros',150.00,'Gasto Fijo: Mantenimiento Sucursal','2026-06-01 09:42:47'),(54,1,'egreso','insumos',600.00,'Compra Stock IA: Carne de Cerdo (Maciza) (1 envases)','2026-06-01 09:43:07'),(55,1,'egreso','insumos',2400.00,'Compra Stock IA: Carne de Cerdo (Maciza) (4 envases)','2026-06-01 10:02:36'),(56,1,'egreso','insumos',1000.00,'Compra Stock: prueba (1 envases)','2026-06-01 10:13:17'),(57,1,'ingreso','otros',356.00,'Cierre Mesa 1 (1 órdenes)','2026-06-01 23:52:55'),(58,1,'ingreso','otros',169.00,'Cierre Mesa 2 (1 órdenes)','2026-06-01 23:52:56'),(59,1,'egreso','insumos',240.00,'Compra Stock: Masa de Maíz (4 envases)','2026-06-02 00:04:14'),(60,1,'egreso','insumos',1440.00,'Compra Stock: Bistec de Res (4 envases)','2026-06-02 00:04:22'),(61,1,'egreso','insumos',750.00,'Compra Stock: Maíz Cacahuazintle (3 envases)','2026-06-02 00:04:28'),(62,1,'egreso','insumos',120.00,'Compra Stock: Crema (3 envases)','2026-06-02 00:04:36'),(63,1,'egreso','insumos',630.00,'Compra Stock: Queso Rallado (7 envases)','2026-06-02 00:04:46'),(64,1,'egreso','insumos',540.00,'Compra Stock: Agua de Horchata (9 envases)','2026-06-02 00:04:56'),(65,1,'ingreso','otros',169.00,'Cierre Mesa 1 (1 órdenes)','2026-06-02 00:05:17'),(66,1,'egreso','insumos',600.00,'Compra Stock IA: Carne de Cerdo (Maciza) (1 envases)','2026-06-02 00:15:10'),(67,1,'egreso','otros',20.00,'Servilletas','2026-06-02 00:15:10'),(68,1,'egreso','insumos',600.00,'Compra Stock IA: Carne de Cerdo (Maciza) (1 envases)','2026-06-02 00:15:26'),(69,1,'egreso','otros',20.00,'Servilletas','2026-06-02 00:15:26');
 /*!40000 ALTER TABLE `movimientos_financieros` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -305,12 +311,14 @@ CREATE TABLE `pedido_detalles` (
   `id_producto` int DEFAULT NULL,
   `cantidad` int NOT NULL DEFAULT '1',
   `precio_en_pedido` decimal(10,2) NOT NULL COMMENT 'Congela el precio al momento de la compra',
+  `notas_adicionales` text,
+  `ingredientes_excluidos` text COMMENT 'Almacena los ID de ingredientes que no se quieren, separados por comas (Ej: "1,4")',
   PRIMARY KEY (`id_pedido_detalle`),
   UNIQUE KEY `idx_pedido_producto` (`id_pedido`,`id_producto`),
   KEY `fk_detalle_producto` (`id_producto`),
   CONSTRAINT `fk_detalle_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_detalle_producto` FOREIGN KEY (`id_producto`) REFERENCES `productos` (`id_producto`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -319,6 +327,7 @@ CREATE TABLE `pedido_detalles` (
 
 LOCK TABLES `pedido_detalles` WRITE;
 /*!40000 ALTER TABLE `pedido_detalles` DISABLE KEYS */;
+INSERT INTO `pedido_detalles` VALUES (10,600,200,1,124.00,NULL,NULL),(11,600,201,1,123.00,NULL,NULL),(12,600,203,1,45.00,NULL,NULL),(13,601,201,1,123.00,NULL,NULL),(14,601,200,1,124.00,NULL,NULL),(15,602,201,1,123.00,NULL,NULL),(16,602,203,1,45.00,NULL,NULL),(17,603,200,2,124.00,NULL,NULL),(18,603,201,1,123.00,NULL,NULL),(19,603,203,1,45.00,NULL,NULL),(20,604,200,1,124.00,NULL,NULL),(21,700,201,2,123.00,NULL,NULL),(22,701,200,1,124.00,NULL,NULL),(23,701,203,1,45.00,NULL,NULL),(24,702,200,2,124.00,NULL,NULL),(25,702,201,1,123.00,NULL,NULL),(26,702,203,2,45.00,NULL,NULL),(27,703,201,2,123.00,NULL,NULL),(28,703,202,1,110.00,NULL,NULL),(29,704,200,1,124.00,'Sin cebolla y el caldo muy caliente por favor.','24'),(30,704,203,1,45.00,NULL,NULL),(31,705,200,1,124.00,'Sin cebolla y el caldo muy caliente por favor.','24'),(32,705,203,1,45.00,NULL,NULL);
 /*!40000 ALTER TABLE `pedido_detalles` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -342,10 +351,13 @@ CREATE TABLE `pedidos` (
   `fecha_en_proceso` datetime DEFAULT NULL COMMENT 'Cuando el cocinero empieza',
   `fecha_completado` datetime DEFAULT NULL COMMENT 'Cuando el plato está listo',
   `fecha_pago` datetime DEFAULT NULL COMMENT 'Cuando el cliente paga',
+  `id_mesero` int DEFAULT NULL,
   PRIMARY KEY (`id_pedido`),
   KEY `fk_pedidos_restaurante` (`id_restaurante`),
+  KEY `fk_pedidos_mesero` (`id_mesero`),
+  CONSTRAINT `fk_pedidos_mesero` FOREIGN KEY (`id_mesero`) REFERENCES `m_usuarios` (`id_usuario`) ON DELETE SET NULL,
   CONSTRAINT `fk_pedidos_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=706 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -354,6 +366,7 @@ CREATE TABLE `pedidos` (
 
 LOCK TABLES `pedidos` WRITE;
 /*!40000 ALTER TABLE `pedidos` DISABLE KEYS */;
+INSERT INTO `pedidos` VALUES (600,1,'Mesa 1','App Cliente',292.00,'inactivo','2026-05-29 11:43:21',0,NULL,'2026-05-29 11:43:21','2026-05-29 11:57:21','2026-05-29 12:28:21',NULL),(601,1,'Mesa 3','App Cliente',247.00,'inactivo','2026-05-28 11:43:21',0,NULL,'2026-05-28 11:43:21','2026-05-28 12:00:21','2026-05-28 12:33:21',NULL),(602,1,'Barra 2','App Cliente',168.00,'inactivo','2026-05-27 11:43:21',0,NULL,'2026-05-27 11:43:21','2026-05-27 11:58:21','2026-05-27 12:23:21',NULL),(603,1,'Mesa 5','App Cliente',416.00,'inactivo','2026-05-26 11:43:21',0,NULL,'2026-05-26 11:43:21','2026-05-26 12:01:21','2026-05-26 12:43:21',NULL),(604,1,'Mesa 1','App Cliente',124.00,'inactivo','2026-05-25 11:43:21',0,NULL,'2026-05-25 11:43:21','2026-05-25 11:56:21','2026-05-25 12:18:21',NULL),(700,1,'Mesa 1','App Cliente',246.00,'inactivo','2026-05-30 12:00:00',0,NULL,'2026-05-30 12:02:00','2026-05-30 12:12:00','2026-05-30 12:40:00',NULL),(701,1,'Mesa 2','App Cliente',169.00,'inactivo','2026-05-30 13:00:00',0,NULL,'2026-05-30 13:03:00','2026-05-30 13:18:00','2026-05-30 13:50:00',NULL),(702,1,'Mesa 4','App Cliente',461.00,'inactivo','2026-05-30 14:00:00',0,NULL,'2026-05-30 14:05:00','2026-05-30 14:30:00','2026-05-30 15:10:00',NULL),(703,1,'Mesa 1','App Cliente',356.00,'inactivo','2026-06-01 23:43:13',0,NULL,NULL,NULL,'2026-06-01 23:52:55',NULL),(704,1,'Mesa 2','App Cliente',169.00,'inactivo','2026-06-01 23:50:36',0,NULL,NULL,NULL,'2026-06-01 23:52:56',NULL),(705,1,'Mesa 1','App Cliente',169.00,'inactivo','2026-06-02 00:05:07',0,NULL,'2026-06-02 00:05:07','2026-06-02 00:05:13','2026-06-02 00:05:17',3);
 /*!40000 ALTER TABLE `pedidos` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -376,7 +389,7 @@ CREATE TABLE `productos` (
   PRIMARY KEY (`id_producto`),
   UNIQUE KEY `idx_restaurante_nombre_prod` (`id_restaurante`,`nombre`),
   CONSTRAINT `fk_productos_restaurante` FOREIGN KEY (`id_restaurante`) REFERENCES `restaurante` (`id_restaurante`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=204 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -385,7 +398,7 @@ CREATE TABLE `productos` (
 
 LOCK TABLES `productos` WRITE;
 /*!40000 ALTER TABLE `productos` DISABLE KEYS */;
-INSERT INTO `productos` VALUES (1,1,'Taco de Prueba','Delicioso',20.00,'platillo','inactivo',NULL),(2,1,'Refresco','Bien frio',25.00,'bebida','inactivo',NULL),(3,1,'Leche entera','ayuda',235.00,'platillo','activo',NULL);
+INSERT INTO `productos` VALUES (200,1,'Pozole Rojo (Maciza)','Maíz, caldo y proteína, se envían acompañamientos separados.',124.00,'platillo','activo',NULL),(201,1,'Orden de Flautas','3 flautas crujientes con crema, queso y lechuga.',123.00,'platillo','activo',NULL),(202,1,'Sope con Bistec','Se envía preparado con frijol, lechuga, queso y bistec (100gr).',110.00,'platillo','activo',NULL),(203,1,'Agua de Horchata','Agua fresca tradicional (1 litro).',45.00,'bebida','activo',NULL);
 /*!40000 ALTER TABLE `productos` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -413,7 +426,7 @@ CREATE TABLE `recetas` (
 
 LOCK TABLES `recetas` WRITE;
 /*!40000 ALTER TABLE `recetas` DISABLE KEYS */;
-INSERT INTO `recetas` VALUES (3,1,24.00);
+INSERT INTO `recetas` VALUES (200,20,250.00),(200,21,150.00),(200,24,50.00),(201,21,100.00),(201,22,150.00),(201,24,40.00),(201,25,40.00),(201,26,30.00),(202,22,100.00),(202,23,100.00),(202,25,20.00),(202,26,15.00),(203,27,1000.00);
 /*!40000 ALTER TABLE `recetas` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -428,6 +441,10 @@ CREATE TABLE `restaurante` (
   `id_restaurante` int NOT NULL AUTO_INCREMENT,
   `nombre_restaurante` varchar(100) NOT NULL,
   `codigo_acceso` varchar(20) DEFAULT 'YaYoungFuture5',
+  `direccion` varchar(255) DEFAULT NULL,
+  `telefono` varchar(20) DEFAULT NULL,
+  `rfc` varchar(20) DEFAULT NULL,
+  `porcentaje_iva` decimal(5,2) DEFAULT '16.00',
   PRIMARY KEY (`id_restaurante`),
   UNIQUE KEY `nombre_restaurante_UNIQUE` (`nombre_restaurante`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -439,7 +456,7 @@ CREATE TABLE `restaurante` (
 
 LOCK TABLES `restaurante` WRITE;
 /*!40000 ALTER TABLE `restaurante` DISABLE KEYS */;
-INSERT INTO `restaurante` VALUES (1,'angel\'s Restaurant','YaYoungFuture5');
+INSERT INTO `restaurante` VALUES (1,'La Casa de Toño','CasaTono2026','Calle Salvador Díaz Mirón 398, Un Hogar Para Nosotros, Miguel Hidalgo, 11330 Ciudad de México, CDMX','55-5555-5555','CATO000101XYZ',16.00);
 /*!40000 ALTER TABLE `restaurante` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -464,7 +481,7 @@ CREATE TABLE `sessions` (
 
 LOCK TABLES `sessions` WRITE;
 /*!40000 ALTER TABLE `sessions` DISABLE KEYS */;
-INSERT INTO `sessions` VALUES ('ATVvLa8ctTmbT6GX8Br5aLuNM_ygMOdU',1769018321,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2026-01-21T17:21:33.270Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"angel\'s Restaurant\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}');
+INSERT INTO `sessions` VALUES ('4xd5zpghfCjjMPpcf1jppobbdy7ofWYQ',1780383694,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2026-05-29T19:04:45.902Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"angel\'s Restaurant\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}'),('F88vwkZn72kJeiq-6KySOcW0iKI51eiO',1780986122,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2026-06-09T05:28:53.296Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"La Casa de Toño\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}'),('KMroGOAM3hoc5-2cLgqpg_U_jMInWrJw',1780986763,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2026-06-09T05:40:16.814Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"La Casa de Toño\",\"userId\":3,\"restauranteId\":1,\"nombreUsuario\":\"Angel mesero\",\"rol\":\"mesero\"}'),('aR_hxb5qxUd_iuT1FHRHdxMObgMjYdwe',1780383297,'{\"cookie\":{\"originalMaxAge\":604799999,\"expires\":\"2026-05-26T15:53:17.688Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"angel\'s Restaurant\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}'),('gFAfR9MF4mQ046-rtGTs2tuSeGgPpSqs',1780770441,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2026-06-06T18:27:19.754Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"La Casa de Toño\",\"userId\":1,\"restauranteId\":1,\"nombreUsuario\":\"angel\",\"rol\":\"dueño\"}'),('xsdkAXFKIK6ZblXuRktSceC72a4S7dMa',1780986763,'{\"cookie\":{\"originalMaxAge\":604800000,\"expires\":\"2026-06-09T05:29:29.785Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"restauranteContexto\":1,\"nombreRestauranteContexto\":\"La Casa de Toño\",\"userId\":2,\"restauranteId\":1,\"nombreUsuario\":\"Angel Cocinero\",\"rol\":\"cocinero\"}');
 /*!40000 ALTER TABLE `sessions` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -555,4 +572,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-04-20 11:21:03
+-- Dump completed on 2026-06-02  0:32:52
