@@ -29,30 +29,29 @@
     </div>
     <div class="container" id="container">
         <div class="formcontainer signup">
-            <form id="formcuenta">
-                <h1>Crear una Cuenta</h1>
-                <div class="loguito">
-                    <ion-icon name="person-outline"></ion-icon>
-                    <input type="text" id="registername" placeholder="Nombre" required>
+            <div style="padding: 0 40px; display: flex; flex-direction: column; justify-content: center; height: 100%; text-align: center; background-color: var(--containerbg);">
+                <h1>Manual del Sistema</h1>
+                <p style="margin: 10px 0 20px;">Haz clic en un rol para conocer sus funciones dentro de la plataforma operativo:</p>
+                
+                <div style="display: flex; justify-content: center; gap: 20px; margin-bottom: 25px;">
+                    <button type="button" class="btn-rol" data-rol="dueno" style="padding: 10px; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; background-color: var(--primaryblue); border: none;">
+                        <ion-icon name="business-outline" style="font-size: 1.5em; color: white;"></ion-icon>
+                    </button>
+                    <button type="button" class="btn-rol" data-rol="cocinero" style="padding: 10px; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; background-color: #7f8c8d; border: none;">
+                        <ion-icon name="restaurant-outline" style="font-size: 1.5em; color: white;"></ion-icon>
+                    </button>
+                    <button type="button" class="btn-rol" data-rol="mesero" style="padding: 10px; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; background-color: #7f8c8d; border: none;">
+                        <ion-icon name="people-outline" style="font-size: 1.5em; color: white;"></ion-icon>
+                    </button>
                 </div>
-                <div class="loguito">
-                    <ion-icon name="mail-outline"></ion-icon>
-                    <input type="email" id="registeremail" placeholder="Email" required>
+
+                <div id="tutorialInfoCard" style="background-color: var(--bgcolor); padding: 15px; border-radius: 10px; min-height: 120px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #ddd;">
+                    <h3 id="tutorialRolTitulo" style="color: var(--primaryblue); margin-bottom: 5px;">Administrador / Dueño</h3>
+                    <p id="tutorialRolDesc" style="margin: 0; font-size: 0.9em; line-height: 1.4; font-weight: 400; color: var(--darkgraytext);">
+                        Control total del ecosistema: visualización de KPIs financieros en tiempo real, gráficas de tendencia, balances de pérdidas y gestión de personal.
+                    </p>
                 </div>
-                <div class="loguito">
-                    <ion-icon name="lock-closed-outline"></ion-icon>
-                    <input type="password" id="registerpassword" placeholder="Contraseña" required>
-                </div>
-                <div class="loguito">
-                    <ion-icon name="briefcase-outline"></ion-icon>
-                    <select id="registerrol" style="background: transparent; border: none; width: 100%; color: #555; outline: none;">
-                        <option value="cocinero">Rol: Cocinero</option>
-                        <option value="mesero">Rol: Mesero</option>
-                    </select>
-                </div>
-                <button type="submit">Registrarse</button>
-                <div id="registererror" class="errormessage"></div>
-            </form>
+            </div>
         </div>
 
         <div class="formcontainer signin">
@@ -75,13 +74,13 @@
             <div class="overlay">
                 <div class="overlaypanel overlayleft">
                     <h1>¡Hola!</h1>
-                    <p>Regístrese con sus datos personales para usar todas las funciones del sitio</p>
+                    <p>Aquí podrá visualizar el tutorial de su rol</p>
                     <button class="ghost" id="signInBtn">Iniciar Sesión</button>
                 </div>
                 <div class="overlaypanel overlayright">
                     <h1>¡Bienvenido!</h1>
                     <p>Ingrese sus datos personales para usar todas las funciones del sitio</p>
-                    <button class="ghost" id="signUpBtn">Registrarse</button>
+                    <button class="ghost" id="signUpBtn">Información</button>
                 </div>
             </div>
         </div>

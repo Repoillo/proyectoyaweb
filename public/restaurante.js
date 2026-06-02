@@ -229,15 +229,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? `<span style="background-color: #2ecc71; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.75em; font-weight: bold; margin-left: 10px;">Vinculado</span>`
                         : `<span style="background-color: #95a5a6; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.75em; font-weight: bold; margin-left: 10px;">Sin acceso</span>`;
 
+                    // Reemplaza el bloque innerHTML de empleados por este:
                     innerHTML = `
                         <td>
                             <div style="display: flex; align-items: center;">
-                                ${escapeHTML(item.nombre_empleado)} ${badgeHTML}
+                                ${escapeHTML(item.nombre_empleado)}
                             </div>
-                            ${tieneAcceso ? `<small style="color: #7f8c8d; display: block; margin-top: 4px;">${escapeHTML(item.correo_usuario)}</small>` : ''}
                         </td>
                         <td style="text-transform: capitalize;">${escapeHTML(item.rol)}</td>
                         <td>$${parseFloat(item.sueldo).toFixed(2)}</td>
+                        <td>
+                            ${badgeHTML}
+                            ${tieneAcceso ? `<small style="color: #7f8c8d; display: block; margin-top: 4px;">${escapeHTML(item.correo_usuario)}</small>` : ''}
+                        </td>
                     `;
                 }else if (seccion === 'mesas') {
                     itemId = item.id_mesa;
@@ -509,11 +513,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (seccion === 'empleados') {
             const tieneCorreo = datos.correo_usuario && datos.correo_usuario.includes('@');
             
-            const campoCorreoHTML = modoFormulario === 'editar' 
-                ? `<input type="email" name="correo_usuario" value="${escapeHTML(datos.correo_usuario || '')}" 
-                    ${tieneCorreo ? 'readonly title="El correo vinculado no se puede editar aquí"' : 'placeholder="Sin correo vinculado" readonly'} 
-                    style="background-color: #eee; cursor: not-allowed;">`
-                : `<input type="email" name="correo_usuario" value="" placeholder="Opcional: ej. correo@restaurante.com">`;
+            const campoCorreoHTML = `<input type="email" name="correo_usuario" 
+            value="${escapeHTML(datos.correo_usuario || '')}" placeholder="Opcional: ej. correo@restaurante.com">`;
 
             camposDinamicos.innerHTML = `
                 <label>Nombre del Empleado:</label>
@@ -527,14 +528,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <option value="Mesero" ${datos.rol === 'Mesero' ? 'selected' : ''}>Mesero</option>
                 </select>
                 
-                <label>Sueldo Diario ($):</label>
-                <input type="number" name="sueldo" value="${datos.sueldo || ''}" min="1" max="10000" required>
+                <label>Sueldo Mensual ($):</label>
+                <input type="number" name="sueldo" value="${datos.sueldo || ''}" min="1" max="100000" required>
                 
                 <label>Correo (Acceso al Sistema):</label>
                 ${campoCorreoHTML}
-                ${modoFormulario === 'agregar' 
-                    ? `<small style="color:#7f8c8d; display:block; margin-top:-10px; margin-bottom:20px;">Si llenas esto, se enviará un correo para crear su cuenta.</small>` 
-                    : '<div style="margin-bottom: 20px;"></div>'}
+                <small style="color:#7f8c8d; display:block; margin-top:-10px; margin-bottom:20px;">
+                    ${modoFormulario === 'agregar' ? 'Si llenas esto, se enviará un correo para crear su cuenta.' : 'Si agregas o cambias el correo, se actualizarán sus credenciales.'}
+                </small>
             `;
         } else if (seccion === 'mesas') {
             camposDinamicos.innerHTML = `

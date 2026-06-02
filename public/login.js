@@ -4,18 +4,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const formGatekeeper = document.getElementById('formGatekeeper');
     const gatekeeperError = document.getElementById('gatekeeperError');
     
-    // Referencias Login/Registro
+    // Referencias Login y Animaciones
     const signUpButton = document.getElementById('signUpBtn');
     const signInButton = document.getElementById('signInBtn');
     const container = document.getElementById('container');
     const formsesion = document.getElementById('formsesion');
-    const formcuenta = document.getElementById('formcuenta');
     const loginerror = document.getElementById('loginerror');
-    const registererror = document.getElementById('registererror');
 
     // --- 1. LÓGICA DEL GATEKEEPER ---
-    
-    // Función para manejar el envío del código
     formGatekeeper.addEventListener('submit', async (e) => {
         e.preventDefault();
         const codigo = document.getElementById('inputCodigoRestaurante').value.trim();
@@ -26,15 +22,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ codigo }),
-                credentials: 'include' // Importante para guardar la cookie de sesión
+                credentials: 'include' 
             });
 
             const data = await res.json();
 
             if (res.ok) {
                 gatekeeperModal.classList.add('oculto');
-                const titulo = document.querySelector('.overlaypanel h1');
-                if(titulo) titulo.innerText = "Bienvenido";
+                // ¡Línea que sobrescribía el "Bienvenido" eliminada!
             } else {
                 gatekeeperError.textContent = data.message || 'Código incorrecto.';
             }
@@ -49,75 +44,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/auth/status', { credentials: 'include' });
             const data = await res.json();
 
-            // Si ya está logueado como usuario, redirigir
+            // Redirección si ya está logueado
             if (res.ok && data.loggedIn) {
                 if (data.rol === 'dueño') window.location.href = '/restaurante.html';
                 else if (data.rol === 'cocinero') window.location.href = '/cocina.html';
                 else if (data.rol === 'mesero') window.location.href = '/mesero.html';
                 return;
             } 
-            
-            
         } catch (e) {
             console.log("Esperando código de restaurante...");
         }
     }
     verificarContextoInicial();
 
+    // --- 2. ANIMACIONES DE LOS PANELES ---
     signUpButton.addEventListener('click', () => container.classList.add("rightpanelactive"));
     signInButton.addEventListener('click', () => container.classList.remove("rightpanelactive"));
 
-    formcuenta.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        registererror.textContent = '';
-        registererror.style.color = 'red'; 
-        
-        const nombre = document.getElementById('registername').value.trim();
-        const correo = document.getElementById('registeremail').value.trim();
-        const contrasena = document.getElementById('registerpassword').value;
-        const rol = document.getElementById('registerrol').value;
-
-
-        const nombreRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
-        if (nombre.length < 3 || !nombreRegex.test(nombre)) {
-            registererror.textContent = 'El nombre solo debe contener letras (min 3).';
-            return;
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(correo)) {
-            registererror.textContent = 'El correo no parece real (falta @ o dominio).';
-            return;
-        }
-
-        if (contrasena.length < 8) {
-            registererror.textContent = 'La contraseña debe tener al menos 8 caracteres.';
-            return;
-        }
-        if (!/\d/.test(contrasena)) { 
-            registererror.textContent = 'Agrega al menos un número a tu contraseña.';
-            return;
-        }
-
-        try {
-            const res = await fetch('/api/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nombre_usuario: nombre, correo_usuario: correo, contra: contrasena, rol: rol }),
-                credentials: 'include'
-            });
-            
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.message);
-            
-            alert('Usuario creado en este restaurante.');
-            formcuenta.reset();
-            container.classList.remove("rightpanelactive");
-        } catch (error) {
-            registererror.textContent = error.message;
-        }
-    });
-
+    // --- 3. LÓGICA DE INICIO DE SESIÓN ---
     formsesion.addEventListener('submit', async (e) => {
         e.preventDefault();
         const correo = document.getElementById('loginemail').value;
@@ -140,5 +84,45 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             loginerror.textContent = error.message;
         }
+    });
+
+    // --- 4. LÓGICA DEL TUTORIAL DE ROLES ---
+    const infoRoles = {
+        dueno: {
+            titulo: "Administrador / Dueño",
+            desc: "Control total del ecosistema: visualización de KPIs financieros en tiempo real, gráficas de tendencia, balances de pérdidas y gestión de personal.",
+            color: "#2c3e50"
+        },
+        cocinero: {
+            titulo: "Equipo de Cocina",
+            desc: "Visualización limpia de comandas activas ordenadas por tiempo de espera. Acceso instantáneo al visor de recetas y blindaje de inventario automatizado.",
+            color: "#e67e22"
+        },
+        mesero: {
+            titulo: "Personal de Piso / Mesero",
+            desc: "Gestión ágil del salón de comensales. Permite la apertura de mesas, generación de códigos PIN para los clientes y liberación de espacios.",
+            color: "#2ecc71"
+        }
+    };
+
+    document.querySelectorAll('.btn-rol').forEach(boton => {
+        boton.addEventListener('click', () => {
+            const rolSelected = boton.dataset.rol;
+            const data = infoRoles[rolSelected];
+            
+            // Actualizar interfaz de texto
+            const tituloEl = document.getElementById('tutorialRolTitulo');
+            const descEl = document.getElementById('tutorialRolDesc');
+            
+            if (tituloEl && descEl) {
+                tituloEl.textContent = data.titulo;
+                descEl.textContent = data.desc;
+                tituloEl.style.color = data.color;
+            }
+            
+            // Cambiar estados visuales de los botones (Gris para los inactivos, color para el activo)
+            document.querySelectorAll('.btn-rol').forEach(b => b.style.backgroundColor = '#7f8c8d');
+            boton.style.backgroundColor = data.color;
+        });
     });
 });

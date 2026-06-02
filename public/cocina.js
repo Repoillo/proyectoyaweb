@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- RENDERIZAR PEDIDOS ---
     function renderizarListaComandas(pedidos) {
-        listaComandas.innerHTML = ''; // Limpiar
+        listaComandas.innerHTML = ''; 
 
         if (pedidos.length === 0) {
             listaComandas.innerHTML = '<p style="text-align: center; font-size: 1.2em; color: #777;">No hay pedidos pendientes.</p>';
@@ -81,16 +81,38 @@ document.addEventListener('DOMContentLoaded', () => {
             comandaItem.classList.add('comanda-item');
             comandaItem.dataset.id = pedido.id_pedido;
 
-            // Calcular tiempo transcurrido
             const fechaPedido = new Date(pedido.fecha_creacion);
-            const ahora = new Date();
-            const diffMs = ahora - fechaPedido;
-            const diffMins = Math.floor(diffMs / 60000);
-
-            // Clase de estado
+            const diffMins = Math.floor((new Date() - fechaPedido) / 60000);
             const claseEstado = `estado-${pedido.estado.replace(' ', '-')}`;
 
-            // APLICAMOS BLINDAJE AQUÍ (Mesa y Estado)
+            // Lógica visual para la caja de alertas por fuera
+            let alertasHTML = '';
+            if (pedido.alertas && pedido.alertas.length > 0) {
+                let listaAlertas = pedido.alertas.map(alerta => {
+                    let textoExcluidos = alerta.excluidos.length > 0 
+                        ? `<span style="color:#c0392b; font-weight:bold; background:#fadbd8; padding: 2px 6px; border-radius:4px;">Sin: ${alerta.excluidos.join(', ')}</span>` 
+                        : '';
+                    let textoNotas = alerta.notas 
+                        ? `<span style="color:#b9770e; font-style:italic;">"${escapeHTML(alerta.notas)}"</span>` 
+                        : '';
+                    
+                    return `<li style="margin-bottom: 6px;">
+                                <strong>${alerta.cantidad}x ${escapeHTML(alerta.producto)}</strong> 
+                                <div style="margin-top:3px; padding-left:10px;">${textoExcluidos} ${textoNotas}</div>
+                            </li>`;
+                }).join('');
+
+                // Usamos grid-column: 1 / -1 para que la alerta abarque todo el ancho debajo de los botones
+                alertasHTML = `
+                    <div style="grid-column: 1 / -1; background-color: #fdf2e9; border-left: 5px solid #e74c3c; padding: 12px; margin-top: 10px; border-radius: 5px; font-size: 0.95em;">
+                        <h4 style="margin: 0 0 8px 0; color: #c0392b;"><ion-icon name="warning-outline" style="vertical-align: middle;"></ion-icon> Instrucciones Especiales:</h4>
+                        <ul style="margin: 0; padding-left: 20px; color: #444; list-style-type: square;">
+                            ${listaAlertas}
+                        </ul>
+                    </div>
+                `;
+            }
+
             comandaItem.innerHTML = `
                 <div class="comanda-info" data-id="${pedido.id_pedido}">
                     <h3>${escapeHTML(pedido.mesa)}</h3>
@@ -106,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="boton-accion boton-proceso" title="Marcar 'En Proceso'" data-id="${pedido.id_pedido}" data-estado="en proceso">⏱</button>
                     <button class="boton-accion boton-completar" title="Marcar 'Completado'" data-id="${pedido.id_pedido}" data-estado="completado">✅</button>
                 </div>
+                ${alertasHTML}
             `;
             listaComandas.appendChild(comandaItem);
         });
@@ -172,7 +195,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- LÓGICA DEL MODAL DE RECETA ---
     async function abrirModalReceta(idPedido) {
         tituloModalReceta.textContent = `Cargando Receta (Pedido #${idPedido})...`;
         contenedorRecetasModal.innerHTML = '';
@@ -183,7 +205,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error('No se pudo cargar la receta');
 
             const productosConReceta = await res.json();
-            
             tituloModalReceta.textContent = `Receta del Pedido #${idPedido}`;
             
             if (productosConReceta.length === 0) {
@@ -191,21 +212,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Formatear como "Producto1: Receta, Producto2: Receta"
             let htmlReceta = '';
             productosConReceta.forEach(item => {
-                // BLINDAJE: Nombre del producto
-                htmlReceta += `<h3>${item.cantidad_a_preparar}x ${escapeHTML(item.nombre_producto)}</h3>`;
+                htmlReceta += `<h3 style="color:var(--primaryblue); border-bottom:1px solid #eee; padding-bottom:5px;">${item.cantidad_a_preparar}x ${escapeHTML(item.nombre_producto)}</h3>`;
                 
                 if (item.receta.length > 0) {
-                    htmlReceta += '<ul>';
+                    htmlReceta += '<ul style="list-style:none; padding-left:10px;">';
                     item.receta.forEach(ing => {
-                        // BLINDAJE: Nombre ingrediente y unidad
-                        htmlReceta += `<li>${escapeHTML(ing.nombre)} (${ing.cantidad_usada} ${escapeHTML(ing.unidad_medida)})</li>`;
+                        // Si está excluido, lo mostramos gris, tachado y con la palabra (SIN)
+                        if (ing.excluido) {
+                            htmlReceta += `<li style="margin-bottom:8px;">
+                                <del style="color:#aaa;">${escapeHTML(ing.nombre)} (${ing.cantidad_usada} ${escapeHTML(ing.unidad_medida)})</del> 
+                                <span style="color:#e74c3c; font-weight:bold; font-size:0.9em; margin-left:5px;">(OMITIR)</span>
+                            </li>`;
+                        } else {
+                            htmlReceta += `<li style="margin-bottom:8px;">
+                                <ion-icon name="checkmark-outline" style="color:#27ae60; margin-right:5px;"></ion-icon>
+                                ${escapeHTML(ing.nombre)} <span style="color:#777; font-size:0.9em;">(${ing.cantidad_usada} ${escapeHTML(ing.unidad_medida)})</span>
+                            </li>`;
+                        }
                     });
                     htmlReceta += '</ul>';
                 } else {
-                    htmlReceta += '<p><em>(Este producto no tiene receta registrada)</em></p>';
+                    htmlReceta += '<p style="color:#777; font-style:italic;">(Preparación directa, sin receta ligada)</p>';
                 }
             });
 

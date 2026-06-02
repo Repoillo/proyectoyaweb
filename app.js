@@ -733,33 +733,108 @@ app.post('/api/empleados', requireAuth, requireOwner, async (req, res) => {
 });
 
 app.put('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
+    const { id } = req.params;
+    const { nombre_empleado, rol, sueldo, correo_usuario } = req.body;
+    const id_restaurante = req.session.restauranteId;
+
+    const conn = await pool.getConnection();
     try {
-        const { id } = req.params;
-        const { nombre_empleado, rol, sueldo } = req.body; // NO extraigas el correo aquí
-        const id_restaurante = req.session.restauranteId;
+        await conn.beginTransaction();
+
+        // 1. Obtener el empleado actual para saber si ya tiene usuario vinculado
+        const [empActual] = await conn.query("SELECT id_usuario FROM empleados WHERE id_empleado = ? AND id_restaurante = ?", [id, id_restaurante]);
         
-        await pool.query(
+        if (empActual.length === 0) throw new Error("Empleado no encontrado");
+        let id_usuario_vinculado = empActual[0].id_usuario;
+
+        let rolParaAcceso = 'cocinero';
+        if (rol === 'Gerente' || rol === 'Cajero') rolParaAcceso = 'dueño';
+        else if (rol === 'Mesero') rolParaAcceso = 'mesero';
+
+        // 2. Manejo inteligente de la cuenta
+        if (correo_usuario && correo_usuario.trim() !== '') {
+            const correoLimpio = correo_usuario.trim().toLowerCase();
+
+            if (id_usuario_vinculado) {
+                // Ya tenía cuenta -> Solo actualizamos su correo y rol
+                await conn.query(
+                    "UPDATE m_usuarios SET correo_usuario = ?, rol = ? WHERE id_usuario = ?", 
+                    [correoLimpio, rolParaAcceso, id_usuario_vinculado]
+                );
+            } else {
+                // No tenía cuenta -> Creamos la cuenta y le mandamos sus credenciales
+                const tempPassword = crypto.randomBytes(4).toString('hex');
+                const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+                const [resultUsuario] = await conn.query(
+                    `INSERT INTO m_usuarios (nombre_usuario, correo_usuario, contra_hash, rol, id_restaurante, estado) 
+                     VALUES (?, ?, ?, ?, ?, 'activo')`,
+                    [nombre_empleado, correoLimpio, hashedPassword, rolParaAcceso, id_restaurante]
+                );
+                id_usuario_vinculado = resultUsuario.insertId;
+
+                const mailOptions = {
+                    from: process.env.EMAIL_USER,
+                    to: correoLimpio,
+                    subject: '🍽️ Bienvenido al equipo - Tus accesos',
+                    html: `<div style="font-family: Arial, sans-serif; padding: 20px;">
+                            <h2>Hola, ${nombre_empleado}</h2>
+                            <p>Tu cuenta ha sido activada en el sistema del restaurante.</p>
+                            <p><strong>Usuario:</strong> ${correoLimpio}<br>
+                            <strong>Contraseña:</strong> <span style="color: #e74c3c;">${tempPassword}</span></p>
+                           </div>`
+                };
+                transporter.sendMail(mailOptions).catch(console.error);
+            }
+        }
+
+        // 3. Actualizar datos base del empleado en nómina
+        await conn.query(
             `UPDATE empleados 
-             SET nombre_empleado = ?, rol = ?, sueldo = ? 
+             SET nombre_empleado = ?, rol = ?, sueldo = ?, id_usuario = ? 
              WHERE id_empleado = ? AND id_restaurante = ?`,
-            [nombre_empleado.trim(), rol, sueldo, id, id_restaurante]
+            [nombre_empleado.trim(), rol, sueldo, id_usuario_vinculado, id, id_restaurante]
         );
+
+        await conn.commit();
         res.json({ message: 'Empleado actualizado exitosamente.' });
     } catch(error) {
+        await conn.rollback();
         console.error('Error al actualizar empleado:', error);
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Ese correo ya está en uso por otro usuario.' });
         res.status(500).json({message: 'Error al actualizar el empleado.'});
+    } finally {
+        conn.release();
     }
 });
 
 app.delete('/api/empleados/:id', requireAuth, requireOwner, async (req, res) => {
     try {
         const { id } = req.params;
+        const id_restaurante = req.session.restauranteId;
+        
+        // 1. Obtener el id_usuario vinculado antes de borrar
+        const [emp] = await pool.query(
+            "SELECT id_usuario FROM empleados WHERE id_empleado = ? AND id_restaurante = ?", 
+            [id, id_restaurante]
+        );
+
+        // 2. Si tenía cuenta de acceso, le revocamos el acceso (inactivo)
+        if (emp.length > 0 && emp[0].id_usuario) {
+            await pool.query(
+                "UPDATE m_usuarios SET estado = 'inactivo' WHERE id_usuario = ?", 
+                [emp[0].id_usuario]
+            );
+        }
+
+        // 3. Inactivar al empleado en la nómina
         await pool.query(
             `UPDATE empleados SET estado = 'inactivo' 
              WHERE id_empleado = ? AND id_restaurante = ?`,
-            [id, req.session.restauranteId]
+            [id, id_restaurante]
         );
-        res.json({ message: 'Empleado eliminado exitosamente.' });
+        
+        res.json({ message: 'Empleado y cuenta eliminados exitosamente.' });
     } catch(error) {
         console.error('Error al inactivar empleado:', error);
         res.status(500).json({message: 'Error al inactivar el empleado.'});
@@ -807,20 +882,53 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
                 return res.json({ message: 'Este pedido ya estaba completado.' });
             }
 
-            const [ingredientesRequeridos] = await connection.query(
-                `SELECT i.id_ingrediente, i.nombre, i.stock AS stock_actual, SUM(r.cantidad_usada * pd.cantidad) AS stock_requerido
-                 FROM pedido_detalles pd
-                 JOIN recetas r ON pd.id_producto = r.id_producto
-                 JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
-                 WHERE pd.id_pedido = ? AND i.id_restaurante = ?
-                 GROUP BY i.id_ingrediente, i.nombre, i.stock`,
+            // 1. Obtenemos el desglose detallado de los productos y sus recetas individuales
+            const [desgloseRecetas] = await connection.query(
+                `SELECT pd.cantidad, pd.ingredientes_excluidos,
+                        r.id_ingrediente, r.cantidad_usada, i.nombre, i.stock AS stock_actual
+                FROM pedido_detalles pd
+                JOIN recetas r ON pd.id_producto = r.id_producto
+                JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+                WHERE pd.id_pedido = ? AND i.id_restaurante = ?`,
                 [id, id_restaurante]
             );
 
+            // 2. Procesamos en Node.js para ignorar los insumos no deseados
+            const mapaIngredientesFinales = {};
+
+            for (const fila of desgloseRecetas) {
+                // Convertimos la cadena de exclusiones "1,3" en un arreglo numérico [1, 3]
+                const excluidos = fila.ingredientes_excluidos 
+                    ? fila.ingredientes_excluidos.split(',').map(Number) 
+                    : [];
+
+                // SI EL INGREDIENTE ESTÁ EN LA LISTA DE EXCLUSIÓN, LO IGNORAMOS (No se resta de los lotes)
+                if (excluidos.includes(fila.id_ingrediente)) {
+                    continue; 
+                }
+
+                // Acumulamos el requerimiento en nuestro mapa
+                if (!mapaIngredientesFinales[fila.id_ingrediente]) {
+                    mapaIngredientesFinales[fila.id_ingrediente] = {
+                        id_ingrediente: fila.id_ingrediente,
+                        nombre: fila.nombre,
+                        stock_actual: parseFloat(fila.stock_actual),
+                        stock_requerido: 0
+                    };
+                }
+                
+                mapaIngredientesFinales[fila.id_ingrediente].stock_requerido += 
+                    parseFloat(fila.cantidad_usada) * parseInt(fila.cantidad);
+            }
+
+            // Convertimos nuestro mapa de vuelta a una lista iterable para el algoritmo FIFO existente
+            const ingredientesRequeridos = Object.values(mapaIngredientesFinales);
+
+            // 3. Validación de Stock con la lista filtrada
             const ingredientesFaltantes = [];
             for (const ing of ingredientesRequeridos) {
-                if (parseFloat(ing.stock_actual) < parseFloat(ing.stock_requerido)) {
-                    ingredientesFaltantes.push(`${ing.nombre} (requiere ${ing.stock_requerido}, tiene ${ing.stock_actual})`);
+                if (ing.stock_actual < ing.stock_requerido) {
+                    ingredientesFaltantes.push(`${ing.nombre} (requiere ${ing.stock_requerido.toFixed(2)}, tiene ${ing.stock_actual.toFixed(2)})`);
                 }
             }
 
@@ -832,15 +940,15 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
                 });
             }
 
-            // --- INICIO ALGORITMO FIFO ---
+            // --- EL ALGORITMO FIFO SE EJECUTA EXACTAMENTE IGUAL ---
             for (const reqIng of ingredientesRequeridos) {
-                let cantidadPendiente = parseFloat(reqIng.stock_requerido);
+                let cantidadPendiente = reqIng.stock_requerido;
 
                 const [lotes] = await connection.query(
                     `SELECT id_lote, cantidad_actual 
-                     FROM lotes_ingredientes 
-                     WHERE id_ingrediente = ? AND estado = 'disponible' 
-                     ORDER BY fecha_caducidad ASC`,
+                    FROM lotes_ingredientes 
+                    WHERE id_ingrediente = ? AND estado = 'disponible' 
+                    ORDER BY fecha_caducidad ASC`,
                     [reqIng.id_ingrediente]
                 );
 
@@ -864,14 +972,14 @@ app.put('/api/pedidos/:id/estado', requireAuth, async (req, res) => {
                     }
                 }
 
+                // Sincronizar el stock general resumido
                 await connection.query(
                     `UPDATE ingredientes 
-                     SET stock = (SELECT COALESCE(SUM(cantidad_actual), 0) FROM lotes_ingredientes WHERE id_ingrediente = ? AND estado = 'disponible')
-                     WHERE id_ingrediente = ?`,
+                    SET stock = (SELECT COALESCE(SUM(cantidad_actual), 0) FROM lotes_ingredientes WHERE id_ingrediente = ? AND estado = 'disponible')
+                    WHERE id_ingrediente = ?`,
                     [reqIng.id_ingrediente, reqIng.id_ingrediente]
                 );
             }
-            // --- FIN ALGORITMO FIFO ---
         }
 
         let queryUpdate = "UPDATE pedidos SET estado = ?";
@@ -1057,60 +1165,94 @@ app.put('/api/pedidos/archivar-completados', requireAuth, requireOwner, async (r
         res.status(500).json({ message: 'Error interno al archivar los pedidos.' });
     }
 });
-// [NUEVA RUTA] GET Pedidos para la Cocina (sin ver / en proceso)
+// [NUEVA RUTA] GET Pedidos para la Cocina (Con Alertas Visibles)
 app.get('/api/pedidos/cocina/activos', requireAuth, async (req, res) => {
-    // No necesita requireOwner, el cocinero puede ver esto
     try {
+        const id_rest = req.session.restauranteId;
         const [pedidosActivos] = await pool.query(
             `SELECT id_pedido, mesa, estado, fecha_creacion 
              FROM pedidos 
              WHERE id_restaurante = ? AND (estado = 'sin ver' OR estado = 'en proceso')
              ORDER BY fecha_creacion ASC`,
-            [req.session.restauranteId]
+            [id_rest]
         );
+
+        if (pedidosActivos.length === 0) return res.json([]);
+
+        const idsPedidos = pedidosActivos.map(p => p.id_pedido);
+        
+        // Traemos solo los detalles que tienen alguna nota o exclusión
+        const [detallesEspeciales] = await pool.query(
+            `SELECT pd.id_pedido, pr.nombre AS producto, pd.cantidad, pd.notas_adicionales, pd.ingredientes_excluidos
+             FROM pedido_detalles pd JOIN productos pr ON pd.id_producto = pr.id_producto
+             WHERE pd.id_pedido IN (?) AND (pd.notas_adicionales IS NOT NULL OR pd.ingredientes_excluidos IS NOT NULL)`,
+            [idsPedidos]
+        );
+
+        // Diccionario de ingredientes para traducir el "1,3" a "Cebolla, Tomate"
+        const [ingredientes] = await pool.query("SELECT id_ingrediente, nombre FROM ingredientes WHERE id_restaurante = ?", [id_rest]);
+        const mapaIngredientes = {};
+        ingredientes.forEach(i => mapaIngredientes[i.id_ingrediente] = i.nombre);
+
+        pedidosActivos.forEach(pedido => {
+            pedido.alertas = detallesEspeciales
+                .filter(d => d.id_pedido === pedido.id_pedido)
+                .map(d => {
+                    let nombresExcluidos = [];
+                    if (d.ingredientes_excluidos) {
+                        const ids = d.ingredientes_excluidos.split(',');
+                        nombresExcluidos = ids.map(id => mapaIngredientes[id] || 'Desconocido');
+                    }
+                    return {
+                        producto: d.producto,
+                        cantidad: d.cantidad,
+                        notas: d.notas_adicionales,
+                        excluidos: nombresExcluidos
+                    };
+                });
+        });
+
         res.json(pedidosActivos);
     } catch(error) {
-        console.error('Error al obtener pedidos activos para cocina:', error);
         res.status(500).json({message: 'Error al cargar los pedidos.'});
     }
 });
 
-// [NUEVA RUTA] GET Receta/Detalles para el Modal de Cocina
+// [NUEVA RUTA] GET Receta/Detalles para el Modal de Cocina (Tachando lo excluido)
 app.get('/api/pedidos/cocina/detalles/:id_pedido', requireAuth, async (req, res) => {
     try {
         const { id_pedido } = req.params;
 
-        // 1. Obtenemos los productos del pedido
         const [productos] = await pool.query(
-            `SELECT p.id_producto, p.nombre, pd.cantidad 
-             FROM pedido_detalles pd
-             JOIN productos p ON pd.id_producto = p.id_producto
+            `SELECT p.id_producto, p.nombre, pd.cantidad, pd.ingredientes_excluidos 
+             FROM pedido_detalles pd JOIN productos p ON pd.id_producto = p.id_producto
              WHERE pd.id_pedido = ?`,
             [id_pedido]
         );
 
-        // 2. Por cada producto, obtenemos su receta
         const productosConReceta = [];
         for (const prod of productos) {
+            const excluidos = prod.ingredientes_excluidos ? prod.ingredientes_excluidos.split(',').map(Number) : [];
+
             const [receta] = await pool.query(
-                `SELECT i.nombre, r.cantidad_usada, i.unidad_medida
-                 FROM recetas r
-                 JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+                `SELECT i.id_ingrediente, i.nombre, r.cantidad_usada, i.unidad_medida
+                 FROM recetas r JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
                  WHERE r.id_producto = ?`,
                 [prod.id_producto]
             );
             
+            // Marcamos los ingredientes que el cliente no quiso
+            const recetaMarcada = receta.map(ing => ({
+                ...ing,
+                excluido: excluidos.includes(ing.id_ingrediente)
+            }));
+            
             productosConReceta.push({
-                nombre_producto: prod.nombre,
-                cantidad_a_preparar: prod.cantidad,
-                receta: receta // Array de ingredientes
+                nombre_producto: prod.nombre, cantidad_a_preparar: prod.cantidad, receta: recetaMarcada
             });
         }
-        
         res.json(productosConReceta);
-
     } catch(error) {
-        console.error('Error al obtener detalles de receta para cocina:', error);
         res.status(500).json({message: 'Error al cargar los detalles.'});
     }
 });
@@ -1183,15 +1325,16 @@ app.delete('/api/mesas/:id', requireAuth, requireOwner, async (req, res) => {
 });
 
 // 4. POST Ocupar Mesa (Generar Código) - Para Mesero y Dueño
+// 4. POST Ocupar Mesa (Generar Código) - Para Mesero y Dueño
 app.post('/api/mesas/:id/ocupar', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        // Generar código de 3 dígitos al azar (100 - 999)
+        const id_mesero_actual = req.session.userId; // Atrapamos al mesero que hizo clic
         const codigo = Math.floor(Math.random() * 900) + 100;
         
         await pool.query(
-            "UPDATE mesas SET estado = 'ocupada', codigo_sesion = ? WHERE id_mesa = ? AND id_restaurante = ?",
-            [codigo, id, req.session.restauranteId]
+            "UPDATE mesas SET estado = 'ocupada', codigo_sesion = ?, id_mesero = ? WHERE id_mesa = ? AND id_restaurante = ?",
+            [codigo, id_mesero_actual, id, req.session.restauranteId]
         );
         
         res.json({ message: 'Mesa ocupada.', codigo: codigo });
@@ -1200,6 +1343,7 @@ app.post('/api/mesas/:id/ocupar', requireAuth, async (req, res) => {
         res.status(500).json({ message: 'Error al generar el código.' });
     }
 });
+
 // ==========================================
 // RUTA: LIBERAR MESA (Cierre Total de Sesión)
 // ==========================================
@@ -1253,6 +1397,11 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
                     AND estado NOT IN ('cancelado', 'archivado', 'inactivo')`,
                     [nombreMesa, id_restaurante]
                 );
+                // 3. Liberar la mesa físicamente (Borrar PIN, mesero y cambiar estado)
+                await connection.query(
+                    "UPDATE mesas SET estado = 'libre', codigo_sesion = NULL, id_mesero = NULL WHERE id_mesa = ? AND id_restaurante = ?",
+                    [id, id_restaurante]
+                );
             }
         }
 
@@ -1274,26 +1423,31 @@ app.post('/api/mesas/:id/liberar', requireAuth, async (req, res) => {
     }
 });
 // ==========================================
-// RUTA: CREAR PEDIDO (Con Validación de Stock Acumulada)
+// RUTA: CREAR PEDIDO (Actualizada con Notas y Exclusiones)
 // ==========================================
 app.post('/api/movil/pedido', async (req, res) => {
     let { pin, items } = req.body; 
     const id_restaurante = 1; 
-
-    // console.log("--- INTENTO DE PEDIDO ---");
     
     if (!pin) return res.status(400).json({ message: "Falta el PIN de sesión." });
     if (!items || items.length === 0) return res.status(400).json({ message: "El carrito está vacío." });
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
-
-    try {
-        // 1. Validar Sesión/Mesa
         const [mesaCheck] = await connection.query(
-            `SELECT numero_mesa, id_restaurante 
-             FROM mesas 
-             WHERE codigo_sesion = ? AND id_restaurante = ?`,
+            "SELECT numero_mesa, id_restaurante, id_mesero FROM mesas WHERE codigo_sesion = ? AND id_restaurante = ?",
+            [pin, id_restaurante]
+        );
+
+        if (mesaCheck.length === 0) {
+            await connection.rollback();
+            return res.status(401).json({ message: 'PIN inválido. Escanea el QR nuevamente.' });
+        }
+        const mesaReal = mesaCheck[0].numero_mesa;
+        const id_mesero_asignado = mesaCheck[0].id_mesero;
+    try {
+        const [mesaCheck] = await connection.query(
+            "SELECT numero_mesa, id_restaurante FROM mesas WHERE codigo_sesion = ? AND id_restaurante = ?",
             [pin, id_restaurante]
         );
 
@@ -1303,62 +1457,56 @@ app.post('/api/movil/pedido', async (req, res) => {
         }
         const mesaReal = mesaCheck[0].numero_mesa;
 
-        // 2. VALIDACIÓN DE STOCK ACUMULADA
-        // Creamos un mapa para sumar ingredientes si varios productos usan lo mismo
-        // Ejemplo: 2 Tacos + 1 Burrito usan carne. Sumamos toda la carne requerida.
-        const ingredientesRequeridos = {}; // { id_ingrediente: cantidad_total_necesaria }
-
+        const ingredientesRequeridos = {}; 
         let total_calculado = 0;
         const detallesInsertar = [];
 
         for (const item of items) {
-            // A. Validar Producto y Precio
             const [prod] = await connection.query(
                 'SELECT id_producto, nombre, precio_venta FROM productos WHERE id_producto = ?', 
                 [item.id_producto]
             );
-            
-            if (prod.length === 0) {
-                throw new Error(`Producto ID ${item.id_producto} no existe.`);
-            }
+            if (prod.length === 0) throw new Error(`Producto ID ${item.id_producto} no existe.`);
 
             const productoDB = prod[0];
             const cantidad = parseInt(item.cantidad);
             const precio = parseFloat(productoDB.precio_venta);
             total_calculado += precio * cantidad;
 
-            // B. Buscar Receta del Producto
+            // Preparar las notas y los ingredientes excluidos (vienen como un array [1, 4] desde la app)
+            const notas = item.notas_adicionales ? item.notas_adicionales.trim() : null;
+            const excluidosArr = (item.ingredientes_excluidos && Array.isArray(item.ingredientes_excluidos)) 
+                ? item.ingredientes_excluidos 
+                : [];
+            const excluidosStr = excluidosArr.length > 0 ? excluidosArr.join(',') : null;
+
             const [receta] = await connection.query(
                 `SELECT r.id_ingrediente, r.cantidad_usada, i.nombre, i.stock 
-                 FROM recetas r
-                 JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
+                 FROM recetas r JOIN ingredientes i ON r.id_ingrediente = i.id_ingrediente
                  WHERE r.id_producto = ?`,
                 [item.id_producto]
             );
 
-            // C. Acumular requerimientos
+            // Solo acumulamos el requerimiento si el ingrediente NO está en la lista de excluidos
             for (const ing of receta) {
+                if (excluidosArr.includes(ing.id_ingrediente)) continue; // Saltamos este ingrediente
+
                 const necesario = parseFloat(ing.cantidad_usada) * cantidad;
-                
                 if (!ingredientesRequeridos[ing.id_ingrediente]) {
                     ingredientesRequeridos[ing.id_ingrediente] = {
-                        nombre: ing.nombre,
-                        necesario: 0,
-                        stock_actual: parseFloat(ing.stock) // Guardamos el stock actual de la BD
+                        nombre: ing.nombre, necesario: 0, stock_actual: parseFloat(ing.stock)
                     };
                 }
                 ingredientesRequeridos[ing.id_ingrediente].necesario += necesario;
             }
 
-            // Preparar para insertar luego
-            detallesInsertar.push([null, item.id_producto, cantidad, precio]);
+            // Agregamos las nuevas columnas a la fila de inserción
+            detallesInsertar.push([null, item.id_producto, cantidad, precio, notas, excluidosStr]);
         }
 
-        // 3. VERIFICAR SI ALCANZA EL STOCK (Ahora que tenemos los totales)
         const erroresStock = [];
         for (const idIng in ingredientesRequeridos) {
             const datos = ingredientesRequeridos[idIng];
-            // Margen de error pequeño por flotantes
             if (datos.stock_actual < datos.necesario - 0.01) {
                 erroresStock.push(`${datos.nombre} (Faltan ${(datos.necesario - datos.stock_actual).toFixed(2)})`);
             }
@@ -1366,45 +1514,35 @@ app.post('/api/movil/pedido', async (req, res) => {
 
         if (erroresStock.length > 0) {
             await connection.rollback();
-            return res.status(409).json({ 
-                message: `No hay ingredientes suficientes para: ${erroresStock.join(', ')}. Por favor avisa al mesero.` 
-            });
+            return res.status(409).json({ message: `No hay ingredientes suficientes para: ${erroresStock.join(', ')}` });
         }
-
-        // 4. INSERTAR PEDIDO (Si llegamos aquí, hay stock)
-        // Nota: NO descontamos el stock aquí. El stock se descuenta cuando el cocinero marca "Completado".
-        // Pero ya aseguramos que *sí habrá* stock cuando eso pase.
         
         const [pedidoResult] = await connection.query(
-            `INSERT INTO pedidos (id_restaurante, mesa, responsable_pedido, total_calculado, estado, fecha_creacion)
-             VALUES (?, ?, 'App Cliente', ?, 'sin ver', NOW())`,
-            [id_restaurante, mesaReal, total_calculado]
+            `INSERT INTO pedidos (id_restaurante, mesa, responsable_pedido, total_calculado, estado, fecha_creacion, id_mesero)
+             VALUES (?, ?, 'App Cliente', ?, 'sin ver', NOW(), ?)`,
+            [id_restaurante, mesaReal, total_calculado, id_mesero_asignado]
         );
         const id_pedido = pedidoResult.insertId;
 
-        // 5. INSERTAR DETALLES
         if (detallesInsertar.length > 0) {
             const filasFinales = detallesInsertar.map(fila => {
-                fila[0] = id_pedido; 
+                fila[0] = id_pedido; // Asignamos el ID de pedido real
                 return fila;
             });
 
             await connection.query(
-                `INSERT INTO pedido_detalles (id_pedido, id_producto, cantidad, precio_en_pedido) VALUES ?`,
+                `INSERT INTO pedido_detalles (id_pedido, id_producto, cantidad, precio_en_pedido, notas_adicionales, ingredientes_excluidos) VALUES ?`,
                 [filasFinales]
             );
         }
 
         await connection.commit();
         res.status(201).json({ message: 'Pedido enviado.', id_pedido, mesa: mesaReal });
-
     } catch (error) {
         await connection.rollback();
         console.error("ERROR PEDIDO:", error);
         res.status(500).json({ message: error.message || 'Error interno.' });
-    } finally {
-        connection.release();
-    }
+    } finally { connection.release(); }
 });
 
 // MODIFICACIÓN: Resumen Financiero con "AUTO-APERTURA DE DÍA"
@@ -1882,7 +2020,7 @@ app.get('/api/finanzas/dia', requireAuth, async (req, res) => {
         const [fijos] = await pool.query(`SELECT COALESCE(SUM(monto), 0) as total FROM config_gastos_diarios WHERE id_restaurante = ?`, [id_rest]);
 
         // D. Sueldos (Cálculo diario simple: Suma de salarios activos / 30 días)
-        const [nomina] = await pool.query(`SELECT COALESCE(SUM(salario_mensual), 0) as total FROM empleados WHERE id_restaurante = ?`, [id_rest]);
+        const [nomina] = await pool.query(`SELECT COALESCE(SUM(sueldo), 0) as total FROM empleados WHERE id_restaurante = ?`, [id_rest]);
         const sueldosDiarios = nomina[0].total / 30;
 
         res.json({
@@ -2079,11 +2217,17 @@ app.post('/api/chat', requireAuth, requireOwner, async (req, res) => {
     }
 
     try {
-        const systemInstruction = `Eres un asistente operativo para "La Casa de Toño", parte del sistema Proyecto YA!. 
-Tu tono es profesional, analítico y directo.
-Tienes herramientas para consultar datos y registrar operaciones. Úsalas cuando el usuario te lo pida implícita o explícitamente.
-Nunca inventes datos. Si una herramienta devuelve un error (ej. ingrediente no encontrado), explícaselo al usuario para que sea más específico.`;
+        const systemInstruction = `Eres un socio estratégico, asesor financiero y asistente operativo para el restaurante, operando bajo el sistema Proyecto YA!.
+Tu tono es analítico, realista, metódico y directo. Si detectas fugas de dinero o problemas en los números, señálalos sin rodeos. No des respuestas genéricas ni frases hechas; busca la optimización real del negocio.
 
+Tienes acceso a herramientas operativas (crear mesas, registrar lotes/gastos) y herramientas analíticas (consultar KPIs y estadísticas).
+
+REGLA CRÍTICA DE EJECUCIÓN (¡IMPORTANTE!): 
+¡NUNCA PIDAS PERMISO PARA USAR TUS HERRAMIENTAS! 
+Si el usuario te pide un consejo, pregunta por su platillo estrella, o necesita cualquier dato, EJECUTA LA FUNCIÓN INMEDIATAMENTE de forma invisible. 
+ESTÁ ESTRICTAMENTE PROHIBIDO generar texto diciendo "Permíteme consultar", "Voy a revisar", o "Necesito ver los datos". Salta directamente a invocar la herramienta.
+
+Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correlaciona los platillos más vendidos con los insumos, evalúa la utilidad neta y da una crítica constructiva y fundamentada. No alucines datos.`;
         // 1. EL ARSENAL DE HERRAMIENTAS (Lectura y Escritura)
         const tools = [{
             functionDeclarations: [
