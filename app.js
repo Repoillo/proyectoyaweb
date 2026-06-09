@@ -59,9 +59,9 @@ transporter.verify().then(() => {
 
 // Verificamos que el cartero esté listo al arrancar el servidor
 transporter.verify().then(() => {
-    console.log('📧 Nodemailer listo para enviar correos.');
+    console.log('Nodemailer listo para enviar correos.');
 }).catch(err => {
-    console.error('❌ Error configurando Nodemailer:', err);
+    console.error('Error configurando Nodemailer:', err);
 });
 
 app.use(session({
@@ -2235,9 +2235,7 @@ cron.schedule('1 0 * * *', async () => {
     }
 });
 
-// ==========================================
-// RUTA: CHATBOT IA (CON FUNCTION CALLING Y ESCRITURA)
-// ==========================================
+// ruta: CHATBOT IA que hace calling a funciones predeterminadas
 app.post('/api/chat', requireAuth, requireOwner, async (req, res) => {
     const { historial } = req.body;
     const id_rest = req.session.restauranteId;
@@ -2258,7 +2256,6 @@ Si el usuario te pide un consejo, pregunta por su platillo estrella, o necesita 
 ESTÁ ESTRICTAMENTE PROHIBIDO generar texto diciendo "Permíteme consultar", "Voy a revisar", o "Necesito ver los datos". Salta directamente a invocar la herramienta.
 
 Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correlaciona los platillos más vendidos con los insumos, evalúa la utilidad neta y da una crítica constructiva y fundamentada. No alucines datos.`;
-        // 1. EL ARSENAL DE HERRAMIENTAS (Lectura y Escritura)
         const tools = [{
             functionDeclarations: [
                 {
@@ -2309,7 +2306,6 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
             ]
         }];
 
-        // 2. PRIMERA LLAMADA: Evaluación de Intención
         let response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: historial,
@@ -2320,19 +2316,19 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
             }
         });
 
-        // 3. EJECUCIÓN DEL FUNCTION CALLING (Manejo Múltiple / Paralelo)
+        // la ia llama por telefono a esta ruta para decirle "brochacho, i'm gonna do sum shi"
         if (response.functionCalls && response.functionCalls.length > 0) {
             
             // 3.1 Guardamos TODAS las peticiones que hizo Gemini en el historial
             historial.push(response.candidates[0].content); 
             
-            const partesRespuestas = []; // Aquí acumularemos los resultados de todas las funciones
+            const partesRespuestas = []; //acumularemos los resultados de todas las funciones
 
-            // 3.2 Iteramos sobre cada función que la IA haya pedido ejecutar
+            // unimos todas las acciones que le pedimos
             for (const call of response.functionCalls) {
                 const args = call.args;
                 let toolResult = {};
-                console.log(`🤖 IA solicitó ejecutar: ${call.name} con parámetros:`, args);
+                console.log(`IA solicitó ejecutar: ${call.name} con parámetros:`, args);
 
                 try {
                     switch(call.name) {
@@ -2371,7 +2367,7 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
 
                         case 'agregar_mesas_lote':
                             let creadas = [];
-                            // Hacemos el bucle en Node.js, quitándole el peso mental a la IA
+                            // aligerar el trabajo de la ia para que no me roben tokes ps estan bien caros maestra
                             for(let i = 0; i < args.cantidad; i++) {
                                 let numMesa = args.numero_inicial + i;
                                 let nombreFinal = `${args.tipo} ${numMesa}`; 
@@ -2407,7 +2403,6 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
                     toolResult = { error: `Fallo interno al ejecutar esta acción en la base de datos.` };
                 }
 
-                // 3.3 Agregamos la respuesta de ESTA función particular al arreglo
                 partesRespuestas.push({
                     functionResponse: {
                         name: call.name,
@@ -2416,10 +2411,8 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
                 });
             }
 
-            // 3.4 Le devolvemos a Gemini TODAS las respuestas empaquetadas
             historial.push({ role: 'user', parts: partesRespuestas });
 
-            // 4. SEGUNDA LLAMADA: La IA compila todos los resultados en texto humano
             response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: historial,
@@ -2431,7 +2424,6 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
             });
         }
 
-        // 5. ENVIAMOS RESPUESTA FINAL AL FRONTEND
         res.json({ respuesta: response.text });
 
     } catch (error) {
@@ -2440,15 +2432,10 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
     }
 });
 
-// ==========================================
-// RUTA: TOP 5 INGREDIENTES (ÚLTIMOS 7 DÍAS)
-// ==========================================
 app.get('/api/finanzas/consumo-ingredientes', requireAuth, requireOwner, async (req, res) => {
     try {
         const id_rest = req.session.restauranteId;
 
-        // Consulta SQL que cruza Pedidos -> Detalles -> Recetas -> Ingredientes
-        // Solo toma pedidos cerrados o completados de los últimos 7 días.
         const [topIngredientes] = await pool.query(`
             SELECT 
                 i.nombre, 
