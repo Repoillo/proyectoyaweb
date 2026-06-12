@@ -2318,7 +2318,7 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
 
         if (response.functionCalls && response.functionCalls.length > 0) {
             
-            // 3.1 Guardamos TODAS las peticiones que hizo Gemini en el historial
+            // guardamos TODAS las peticiones que hizo gemini en el historial
             historial.push(response.candidates[0].content); 
             
             const partesRespuestas = []; //acumularemos los resultados de todas las funciones
