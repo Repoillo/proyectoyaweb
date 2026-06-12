@@ -2316,7 +2316,6 @@ Una vez que el sistema te devuelva los datos reales, razona tu respuesta. Correl
             }
         });
 
-        // la ia llama por telefono a esta ruta para decirle "brochacho, i'm gonna do sum shi"
         if (response.functionCalls && response.functionCalls.length > 0) {
             
             // 3.1 Guardamos TODAS las peticiones que hizo Gemini en el historial
@@ -2461,11 +2460,6 @@ app.get('/api/finanzas/consumo-ingredientes', requireAuth, requireOwner, async (
     }
 });
 
-// ==========================================
-// RUTAS DE TABLAS CSV (ÚLTIMOS 7 DÍAS)
-// ==========================================
-
-// 1. Frecuencia de Platillos Vendidos
 app.get('/api/finanzas/csv-productos', requireAuth, requireOwner, async (req, res) => {
     try {
         const [productos] = await pool.query(`
